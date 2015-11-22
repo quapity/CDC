@@ -1,8 +1,7 @@
-# LDK
 LDK: A seismic array detection algorithm
 ===============================================
 
-[![Project Website](http://dkilb8.wix.com/earthscope)](http://dkilb8.wix.com/earthscope)
+[Project Website](http://dkilb8.wix.com/earthscope)
 
 
 - [Intro](#intro)
