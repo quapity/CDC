@@ -401,14 +401,16 @@ for days in range(ndays):
                     plt.plot(alltimes[timeindex-tlength:timeindex+tlength],sss[plots][:],'black')
                     plt.axis('tight')
                     plt.axvline(x=alltimes[timeindex])
-                    if peaks != []:
-                        ptimes.append(UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]))
-                        confidence.append(len(peaks))
-                        for arc in range(len(peaks)):
-                            plt.axvline(x=alltimes[timeindex-tlength+peaks[arc][0]],color='orange')
-                    else:
-                        ptimes.append(UTCDateTime(alltimes[timeindex]))
-                        confidence.append(2)
+                    for arc in range(len(peaks)):
+                        plt.axvline(x=alltimes[timeindex-tlength+peaks[arc][0]],color='orange')
+                    while plots ==1:
+                        if peaks != []:
+                            ptimes.append(UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]))
+                            confidence.append(len(peaks))
+                        else:
+                            ptimes.append(UTCDateTime(alltimes[timeindex]))
+                            confidence.append(2)                        
+
                 svname=homedir+str(s)+"/image"+ss[11:13]+"_pick_"+str(fi+1)+".png"
                 plt.savefig(svname,format='png')
                 plt.clf()
