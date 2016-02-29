@@ -39,7 +39,7 @@ import geopy.distance as pydist
 #tt = UTCDateTime('2012-06-01T00:00.00')
 yr = '2011'
 mo = '08'
-dy = '14'
+dy = '16'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -51,7 +51,7 @@ tlength = 4800
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 5 #however many days you want to generate images for
+ndays= 15 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 2.8
@@ -180,7 +180,7 @@ for days in range(ndays):
         longitudes=copy.copy(lo)
         slist=copy.copy(stalist)
         #sort the array orders by distance from lomin,latmin
-        for i in range(len(ll)):
+        for i in range(len(slist)):
             junk=np.where(np.array(dist)==max(dist))
             rayz[i]=rays[junk[0][0]]
             ll[i]=latudes[junk[0][0]]
@@ -260,11 +260,9 @@ for days in range(ndays):
             #fix for issue 002 consecutive time picks (limits the number of back to back events that can be found across the array)
             for i in range(len(idxx)-1):
                 junk = ctimes[idxx[i+1]]-ctimes[idxx[i]]
-                junklat = centroids[idxx[i]]
-                junk1=junklat[1]
+                junk1 = centroids[idxx[i]]
                 junk2 = centroids[idxx[i+1]]
-                junk2=junk2[1]                
-                if junk.seconds < 150 and abs(junk2-junk1) < 2.5:
+                if junk.seconds < 150 and pydist.vincenty(junk2,junk1).meters < 160000:
                     iii=np.delete(idxx,i+1)
             idx = iii 
 #%%           
@@ -358,7 +356,7 @@ for days in range(ndays):
                             ltxlocalexist.append(0)
                         else:
                             ltxlocalexist.append(1)           
-            regionals = set(idx)-set(doubles)
+            regionals = set(idx)-set(doubles)-set(localev)
             regionals = list(regionals)
             if regionals != []:
                 idx = regionals
@@ -403,7 +401,7 @@ for days in range(ndays):
                     plt.axvline(x=alltimes[timeindex])
                     for arc in range(len(peaks)):
                         plt.axvline(x=alltimes[timeindex-tlength+peaks[arc][0]],color='orange')
-                    while plots ==1:
+                    if plots ==1:
                         if peaks != []:
                             ptimes.append(UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]))
                             confidence.append(len(peaks))
