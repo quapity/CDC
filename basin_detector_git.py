@@ -39,7 +39,7 @@ import geopy.distance as pydist
 #tt = UTCDateTime('2012-06-01T00:00.00')
 yr = '2011'
 mo = '08'
-dy = '16'
+dy = '18'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -50,8 +50,8 @@ maketemplates = 1
 tlength = 4800
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
-duration = 86400 +edgebuffer
-ndays= 15 #however many days you want to generate images for
+duration = 7200 +edgebuffer
+ndays= 1 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 2.8
@@ -298,6 +298,7 @@ for days in range(ndays):
                 #look for overlap with ANF global
                 ltxglobal=[]
                 ltxglobalexist=[]
+                doubles = []
                 for j in range(len(globalE)):
                     #get distance between stations and depth for theoretical ttime calc
                     dep = globalE.depth[j]
@@ -340,7 +341,10 @@ for days in range(ndays):
                 ltxlocal,ltxlocalexist=[],[]
                 if len(localE) > 0 and peaks !=[]:
                     for eachlocal in range(len(localE)):
-                        junk= UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]) - UTCDateTime(localE.DateString[eachlocal])
+                        #junk= UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]) - UTCDateTime(localE.DateString[eachlocal])
+                        #took this out because faulty picks disassociated too many events
+                        #calculate with LTX pick time instead
+                        junk= UTCDateTime(alltimes[timeindex]) - UTCDateTime(localE.DateString[eachlocal])
                         if junk > -60 and junk < 60:
                             localev.append(idx[i])
                             ltxlocal.append(UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]))
@@ -359,6 +363,7 @@ for days in range(ndays):
             regionals = set(idx)-set(doubles)-set(localev)
             regionals = list(regionals)
             if regionals != []:
+                regionals.sort()
                 idx = regionals
             #get the nearest station also for cataloged events
             closestd = np.zeros([len(doubles)])
@@ -371,7 +376,15 @@ for days in range(ndays):
                 closestd[event]=finder
                 distarray[finder] = 9e10
                 closestd=closestd.astype(np.int64)
-
+            closestp = []
+            distarray = np.zeros([len(ll)])
+            for event in range(len(localev)):
+                for each in range(len(ll)):
+                    distarray[each]=pydist.vincenty([coordinatesz[1][localev[event]],coordinatesz[0][localev[event]]],[ll[each],lo[each]]).meters
+                
+                finder = np.argmin(distarray)
+                closestp.append(finder)
+                distarray[finder] = 9e10
         ###        
         ###
 #%%
@@ -415,17 +428,11 @@ for days in range(ndays):
         #save templates from this round of picks to verify on closest station
 #%%
         #make a table for the detections during this block 
-        d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'Station': 'NA','Dtime': 'NA', 'Magnitude': -999, 'Confidence': -1, 'AltPick': 'NA'}
-        #index = range(len(localE)+len(idx))
-        index = range(len(localE)+len(regionals)+len(globalE))
+        d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'Station': 'NA','Dtime': 'NA', 'Magnitude': -999, 'Confidence': -1,'ALT1':'NA','ALT2':'NA',
+        'ALT3': 'NA', 'ALT4': 'NA'}
+        #index = range(len(regionals)+len(globalE)+len(localE))
+        index = range(len(regionals))
         df = pd.DataFrame(data=d, index=index)
-        junk1 = len(regionals)
-        junk2 = len(localev)
-        junk3 = len(doubles)
-        
-        #print("nidx=",junk1)
-        #print("nlocalE=",junk2)
-        #print("nglobalE=",junk3)
         i,l,k=0,0,0
         icount=0
         dummy = 0
@@ -437,58 +444,53 @@ for days in range(ndays):
             df.Dtime[icount] = str(ptimes[icount])
             df.Magnitude[icount]='NA'
             df.Confidence[icount]=confidence[icount]
-            #print("icount=",icount)
+            df.ALT1[icount]=slist[closestl[icount][1]]
+            df.ALT2[icount]=slist[closestl[icount][2]]
+            df.ALT3[icount]=slist[closestl[icount][3]]
+            df.ALT4[icount]=slist[closestl[icount][4]]
             icount = icount+1 
         dummy=0
-        while icount<len(regionals)+len(localE):
-            if ltxlocalexist[dummy]==1:
-                df.Contributor[icount]='ANF'
-            else:
-                df.Contributor[icount]='ANF,LTX'
-                df.AltPick[icount]=ltxlocal[0]
-                ltxlocal.pop(0)
-            df.Latitude[icount] = localE.Lat[dummy]
-            df.Longitude[icount]=localE.Lon[dummy]
-            df.Station[icount] = slist[closesti[dummy]]
-            temp = localE.DateString[dummy]
-            tempS = str(temp);
-            #print("tempS=",tempS)
-            df.Dtime[icount] = tempS.replace("T", " ")
-            allmags = [localE.ms[dummy],localE.mb[dummy],localE.ml[dummy]]
-            df.Magnitude[icount]=np.max(allmags)
-            df.Confidence[icount]=0
-            dummy=dummy+1
-            #print("icount=",icount)
-            icount = icount+1
-        dummy=0
-        while icount<len(regionals)+len(localE)+len(globalE): 
-            if ltxglobalexist[dummy]==1:           
-                df.Contributor[icount]='ANF'
-            else:
-                df.Contributor[icount]='ANF,LTX'
-                df.AltPick[icount]=ltxglobal[0]
-                ltxglobal.pop(0)
-            df.Latitude[icount] = globalE.Lat[dummy]
-            df.Longitude[icount]=globalE.Lon[dummy]
-            df.Station[icount] = 'Off-Array'
-            df.Dtime[icount] = globalE.DateString[dummy]
-            temp = globalE.DateString[dummy]
-            tempS = str(temp);
-            #print("tempS=",tempS)
-            df.Dtime[icount] = tempS.replace("T", " ")
-            #print("   now no T I hope=",df.Dtime[icount])
-            allmags = [globalE.ms[dummy],globalE.mb[dummy],globalE.ml[dummy]]
-            df.Magnitude[icount]=np.max(allmags)
-            df.Confidence[icount]=-10
-            dummy=dummy+1
-            icount = icount+1
+#        while icount<len(regionals)+len(localE):
+#            if ltxlocalexist[dummy]==1:
+#                df.Contributor[icount]='ANF'
+#            else:
+#                df.Contributor[icount]='ANF,LTX'
+#                df.AltPick[icount]=ltxlocal[0]
+#                ltxlocal.pop(0)
+#            df.Latitude[icount] = localE.Lat[dummy]
+#            df.Longitude[icount]=localE.Lon[dummy]
+#            df.Station[icount] = slist[closesti[dummy]]
+#            temp = localE.DateString[dummy]
+#            tempS = str(temp);
+#            df.Dtime[icount] = tempS.replace("T", " ")
+#            allmags = [localE.ms[dummy],localE.mb[dummy],localE.ml[dummy]]
+#            df.Magnitude[icount]=np.max(allmags)
+#            df.Confidence[icount]=0
+#            dummy=dummy+1
+#            icount = icount+1
+#        dummy=0
+#        while icount<len(regionals)+len(localE)+len(globalE): 
+#            if ltxglobalexist[dummy]==1:           
+#                df.Contributor[icount]='ANF'
+#            else:
+#                df.Contributor[icount]='ANF,LTX'
+#                df.AltPick[icount]=ltxglobal[0]
+#                ltxglobal.pop(0)
+#            df.Latitude[icount] = globalE.Lat[dummy]
+#            df.Longitude[icount]=globalE.Lon[dummy]
+#            df.Station[icount] = 'Off-Array'
+#            df.Dtime[icount] = globalE.DateString[dummy]
+#            temp = globalE.DateString[dummy]
+#            tempS = str(temp);
+#            df.Dtime[icount] = tempS.replace("T", " ")
+#            allmags = [globalE.ms[dummy],globalE.mb[dummy],globalE.ml[dummy]]
+#            df.Magnitude[icount]=np.max(allmags)
+#            df.Confidence[icount]=-10
+#            dummy=dummy+1
+#            icount = icount+1
         df1 = [df1,df]
-        #print('spot A')
-        #print(df)
-     
         df1= pd.concat(df1)
-        #print('spot B')
-        #print(df1)
+
     ################################################
 #%%
         plt.cla()
@@ -502,6 +504,9 @@ for days in range(ndays):
             
         for i in range(len(doubles)):
             plt.scatter(mdates.date2num(ctimes[doubles[i]]),closestd[i],s=100,color='orange',alpha=.8)
+        
+        for i in range(len(localev)):
+            plt.scatter(mdates.date2num(ctimes[localev[i]]),closestp[i],s=100,color='green',alpha=.8)
          
         for i in range(len(globalE)):
             plt.scatter(mdates.date2num(UTCDateTime(globalE.time[i])),0,s=100,color='b')
@@ -518,7 +523,7 @@ for days in range(ndays):
         ss = ss[0:13]
         kurs = "%s/"%s +"%s.png"%ss
         svpath=homedir+kurs
-        plt.savefig(svpath, format='png')
+       # plt.savefig(svpath, format='png')
 #%%
         blockette = blockette+(npts-nptsf)
         tt = tt+nseconds
