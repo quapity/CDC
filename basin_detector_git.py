@@ -39,8 +39,8 @@ import geopy.distance as pydist
 #tt = UTCDateTime('2012-06-01T00:00.00')
 yr = '2011'
 mo = '08'
-dy = '18'
-hr = '00'
+dy = '17'
+hr = '16'
 mn = '00'
 sc = '00'
 
@@ -50,11 +50,11 @@ maketemplates = 1
 tlength = 4800
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
-duration = 86400 +edgebuffer
+duration = 7200 +edgebuffer
 ndays= 1 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
-thresholdv= 2.8
+thresholdv= 1.5
 deltaf = 40
 nseconds = 7200
 npts = int(deltaf*(nseconds+edgebuffer))
@@ -125,7 +125,8 @@ for days in range(ndays):
     #%%
     nptsf = edgebuffer*deltaf
     blockette = 0
-    d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'Station': 'NA','Dtime': 'NA', 'Magnitude': 'NA', 'Confidence': -1}
+    d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'S1': 'NA','Dtime': 'NA', 'Magnitude': -999, 'Confidence': -1,'S2':'NA','S3':'NA',
+        'S4': 'NA', 'S5': 'NA'}
     index = [0]; df1 = pd.DataFrame(data=d, index=index)   
     stations,latitudes,longitudes,distances=[],[],[],[]
     for i in range(len(inv.networks)):
@@ -145,7 +146,7 @@ for days in range(ndays):
         distances.append(pydist.vincenty([newlat[i],newlon[i]],[latmin,lonmin]).meters)
     #####this is where maths happends and arrays are created to make the images, the images are plotted in the loop, 
     # and only show up at the end
-    for block in range(12):
+    for block in range(1):
         ll,lo,stalist,vizray,dist=[],[],[],[],[]
         shorty = 0
         for z in range(len(snames)):
@@ -198,8 +199,9 @@ for days in range(ndays):
         closesti = np.flipud(closesti) 
         #unstructured triangular mesh with stations as verticies, mask out the long edges
         triang = tri.Triangulation(lo, ll)
-        mask = Ut.long_edges(lo,ll, triang.triangles)
+        mask,edgeL = Ut.long_edges(lo,ll, triang.triangles)
         triang.set_mask(mask)
+        kval=Ut.get_k(lo,ll,triang.triangles,thresholdv)
 #%%
         #get contour areas by frame
         av,aa,xc,yc,centroids,ctimes,ctimesdate,junkx,junky=[],[],[],[],[],[],[],[],[]
@@ -225,14 +227,14 @@ for days in range(ndays):
                 xc.append(sx/sL)
                 yc.append(sy/sL)
             if aa != []:
-                idx = np.where(np.array(aa) > thresholdv)
-                filler = np.where(np.array(aa) <= thresholdv)
+                idx = np.where(np.array(aa) > kval)
+                filler = np.where(np.array(aa) <= kval)
                 chained = itertools.chain.from_iterable(filler)
                 chain = itertools.chain.from_iterable(idx)
                 idx = list(chain)
                 filler = list(chained)
                 for alls in range(len(aa)):
-                    if aa[alls] > thresholdv:
+                    if aa[alls] > kval:
                         centroids.append([xc[idx[0]],yc[idx[0]]])
                         ctimes.append(timevector[each])
                         ctimesdate.append(timevector[each])
@@ -295,6 +297,15 @@ for days in range(ndays):
                 av = sss[0].data[timeindex-tlength:timeindex+tlength]
                 cf=recSTALTA(av, int(40), int(1200))
                 peaks = triggerOnset(cf, 3, .2)
+                #get rid of peaks that are way off LTX times
+                peaksi=[]   
+                for peak in peaks:
+                    peak=peak[0]
+                    junk=alltimes[timeindex]-alltimes[timeindex-tlength+peak]
+                    if abs(junk.seconds) >45:
+                        peaksi.append(i) 
+                        
+                peaks= np.delete(peaks,peaksi,axis=0)
                 #look for overlap with ANF global
                 ltxglobal=[]
                 ltxglobalexist=[]
@@ -323,7 +334,7 @@ for days in range(ndays):
                             ltxglobalexist.append(1)
                     elif peaks != []:
                         junk= UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]) - (UTCDateTime(globalE.DateString[j]) + datetime.timedelta(seconds = arrivals[0].time))
-                        if junk > -30 and junk < 30:
+                        if junk > -45 and junk < 45:
                             doubles.append(idx[i])
                             ltxglobal.append(UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]))
                             ltxglobalexist.append(0)
@@ -344,8 +355,10 @@ for days in range(ndays):
                         #junk= UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]) - UTCDateTime(localE.DateString[eachlocal])
                         #took this out because faulty picks disassociated too many events
                         #calculate with LTX pick time instead
+                        dep = localE.depth[eachlocal]
+                        dit = loc2d(centroids[idx[i]][1],centroids[idx[i]][0], localE.Lat[eachlocal],localE.Lon[eachlocal])
                         junk= UTCDateTime(alltimes[timeindex]) - UTCDateTime(localE.DateString[eachlocal])
-                        if junk > -60 and junk < 60:
+                        if junk > -60 and junk < 60 and dit <3.5*edgeL:
                             localev.append(idx[i])
                             ltxlocal.append(UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]))
                             ltxlocalexist.append(0)
@@ -353,8 +366,10 @@ for days in range(ndays):
                             ltxlocalexist.append(1)
                 if len(localE) > 0 and peaks ==[]:
                     for eachlocal in range(len(localE)):
+                        dep = localE.depth[eachlocal]
+                        dit = loc2d(centroids[idx[i]][1],centroids[idx[i]][0], localE.Lat[eachlocal],localE.Lon[eachlocal])
                         junk= UTCDateTime(alltimes[timeindex]) - UTCDateTime(localE.DateString[eachlocal])
-                        if junk > -60 and junk < 60:
+                        if junk > -60 and junk < 60 and dit <3.5*edgeL:
                             localev.append(idx[i])
                             ltxlocal.append(UTCDateTime(alltimes[timeindex]))
                             ltxlocalexist.append(0)
@@ -387,7 +402,7 @@ for days in range(ndays):
                 distarray[finder] = 9e10
         ###        
         ###
-#%%
+#%%#save templates from this round of picks to verify on closest station
         ss = str(tt)
         ss = ss[0:13] 
         if maketemplates == 1 and len(regionals) > 0:
@@ -425,11 +440,11 @@ for days in range(ndays):
                 svname=homedir+str(s)+"/image"+ss[11:13]+"_pick_"+str(fi+1)+".png"
                 plt.savefig(svname,format='png')
                 plt.clf()
-        #save templates from this round of picks to verify on closest station
+        
 #%%
         #make a table for the detections during this block 
-        d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'Station': 'NA','Dtime': 'NA', 'Magnitude': -999, 'Confidence': -1,'ALT1':'NA','ALT2':'NA',
-        'ALT3': 'NA', 'ALT4': 'NA'}
+        d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'S1': 'NA','Dtime': 'NA', 'Magnitude': -999, 'Confidence': -1,'S2':'NA','S3':'NA',
+        'S4': 'NA', 'S5': 'NA'}
         #index = range(len(regionals)+len(globalE)+len(localE))
         index = range(len(regionals))
         df = pd.DataFrame(data=d, index=index)
@@ -440,14 +455,14 @@ for days in range(ndays):
             df.Contributor[icount]='LTX'
             df.Latitude[icount] = ll[closestl[icount][0]]
             df.Longitude[icount]=lo[closestl[icount][0]]
-            df.Station[icount] = slist[closestl[icount][0]]
+            df.S1[icount] = slist[closestl[icount][0]]
             df.Dtime[icount] = str(ptimes[icount])
             df.Magnitude[icount]='NA'
             df.Confidence[icount]=confidence[icount]
-            df.ALT1[icount]=slist[closestl[icount][1]]
-            df.ALT2[icount]=slist[closestl[icount][2]]
-            df.ALT3[icount]=slist[closestl[icount][3]]
-            df.ALT4[icount]=slist[closestl[icount][4]]
+            df.S2[icount]=slist[closestl[icount][1]]
+            df.S3[icount]=slist[closestl[icount][2]]
+            df.S4[icount]=slist[closestl[icount][3]]
+            df.S5[icount]=slist[closestl[icount][4]]
             icount = icount+1 
         dummy=0
 #        while icount<len(regionals)+len(localE):
@@ -511,7 +526,7 @@ for days in range(ndays):
         for i in range(len(globalE)):
             plt.scatter(mdates.date2num(UTCDateTime(globalE.time[i])),0,s=100,color='b')
         plt.imshow(np.flipud(rayz),extent = [mdates.date2num(tt), mdates.date2num(tt+nseconds),  0, len(slist)],
-                     aspect='auto',interpolation='nearest',cmap='bone',vmin=-50,vmax=80)
+                     aspect='auto',interpolation='nearest',cmap='bone',vmin=-30,vmax=80)
         ax.set_adjustable('box-forced')
         ax.xaxis_date() 
         plt.yticks(np.arange(len(ll)))
@@ -523,7 +538,7 @@ for days in range(ndays):
         ss = ss[0:13]
         kurs = "%s/"%s +"%s.png"%ss
         svpath=homedir+kurs
-       # plt.savefig(svpath, format='png')
+        plt.savefig(svpath, format='png')
 #%%
         blockette = blockette+(npts-nptsf)
         tt = tt+nseconds

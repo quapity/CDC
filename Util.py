@@ -20,8 +20,36 @@ def PolygonArea(corners):
  
 def runningmean(x, N):
     return np.convolve(x, np.ones((N,))/N)[(N-1):]
+    
+def get_k(x,y,triangles,ratio):
+    out = []
+    for points in triangles:
+        a,b,c = points
+        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
+        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
+        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
+        s=d0+d1+d2/2
+        arear=np.sqrt(s*(s-d0)*(s-d1)*(s-d2))
+        out.append(arear)
+    k_value=np.median(out)*ratio
+    return k_value
+    
+def get_edge_ratio(x,y,triangles,ratio):
+    out = []
+    for points in triangles:
+        a,b,c = points
+        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
+        out.append(d0)
+        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
+        out.append(d1)
+        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
+        out.append(d2)
+    mask_length=np.median(out)*ratio
+    median_edge=np.median(out)
+    return mask_length,median_edge
 
-def long_edges(x, y, triangles, ratio=1.3):
+def long_edges(x, y, triangles, ratio=1.5):
+    olen,edgeL=get_edge_ratio(x,y,triangles,ratio)
     out = []
     for points in triangles:
         #print points
@@ -31,11 +59,11 @@ def long_edges(x, y, triangles, ratio=1.3):
         d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
         max_edge = max([d0, d1, d2])
         #print points, max_edge
-        if max_edge > ratio:
+        if max_edge > olen:
             out.append(True)
         else:
             out.append(False)
-    return out
+    return out,edgeL
 
     
     
