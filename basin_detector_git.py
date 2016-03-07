@@ -36,18 +36,18 @@ sys.path.append(homedir)
 import Util as Ut
 import geopy.distance as pydist
 #############################
-#tt = UTCDateTime('2012-06-01T00:00.00')
+
 yr = '2011'
 mo = '08'
-dy = '17'
-hr = '16'
+dy = '11'
+hr = '18'
 mn = '00'
 sc = '00'
 
-#which basin # are we working on??
-wb = 2
+
+wb = 2 #which basin # are we working on for station list import
 maketemplates = 1
-tlength = 4800
+tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 7200 +edgebuffer
@@ -136,7 +136,7 @@ for days in range(ndays):
             stations.append(str(yammer.code))
             latitudes.append(yammer.latitude)
             longitudes.append(yammer.longitude)
-    latmin=min(latitudes);lonmin=min(longitudes) 
+    latmin=min(latitudes);lonmin=max(longitudes) 
     newlat= np.empty([len(snames)])
     newlon= np.empty([len(snames)])
     for i in range(len(snames)):
@@ -144,8 +144,7 @@ for days in range(ndays):
         newlat[i]=latitudes[reindex]
         newlon[i]=longitudes[reindex]
         distances.append(pydist.vincenty([newlat[i],newlon[i]],[latmin,lonmin]).meters)
-    #####this is where maths happends and arrays are created to make the images, the images are plotted in the loop, 
-    # and only show up at the end
+    #####this is where maths happends and arrays are created
     for block in range(1):
         ll,lo,stalist,vizray,dist=[],[],[],[],[]
         shorty = 0
@@ -316,7 +315,7 @@ for days in range(ndays):
                     dit = loc2d(centroids[idx[i]][1],centroids[idx[i]][0], globalE.Lat[j],globalE.Lon[j])
                     arrivals = model.get_travel_times(dep,dit,phase_list=['P'])
                
-                    if len(arrivals) == 0 and peaks !=[]:
+                    if len(arrivals) == 0 and len(peaks)!=0:
                         junk= UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]) - UTCDateTime(globalE.DateString[j])
                         if junk > -120 and junk < 120:
                             doubles.append(idx[i])
@@ -324,7 +323,7 @@ for days in range(ndays):
                             ltxglobalexist.append(0)
                         else:
                             ltxglobalexist.append(1)
-                    elif len(arrivals) == 0 and peaks==[]:
+                    elif len(arrivals) == 0 and len(peaks)==0:
                         junk= UTCDateTime(alltimes[timeindex]) - UTCDateTime(globalE.DateString[j])
                         if junk > -120 and junk < 120:
                             doubles.append(idx[i])
@@ -332,7 +331,7 @@ for days in range(ndays):
                             ltxglobalexist.append(0)
                         else:
                             ltxglobalexist.append(1)
-                    elif peaks != []:
+                    elif len(peaks) != 0:
                         junk= UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]) - (UTCDateTime(globalE.DateString[j]) + datetime.timedelta(seconds = arrivals[0].time))
                         if junk > -45 and junk < 45:
                             doubles.append(idx[i])
@@ -350,7 +349,7 @@ for days in range(ndays):
                             ltxglobalexist.append(1)
                 #look for overlap with ANF local
                 ltxlocal,ltxlocalexist=[],[]
-                if len(localE) > 0 and peaks !=[]:
+                if len(localE) > 0 and len(peaks)!=0:
                     for eachlocal in range(len(localE)):
                         #junk= UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]) - UTCDateTime(localE.DateString[eachlocal])
                         #took this out because faulty picks disassociated too many events
@@ -364,7 +363,7 @@ for days in range(ndays):
                             ltxlocalexist.append(0)
                         else:
                             ltxlocalexist.append(1)
-                if len(localE) > 0 and peaks ==[]:
+                if len(localE) > 0 and len(peaks) ==0:
                     for eachlocal in range(len(localE)):
                         dep = localE.depth[eachlocal]
                         dit = loc2d(centroids[idx[i]][1],centroids[idx[i]][0], localE.Lat[eachlocal],localE.Lon[eachlocal])
@@ -416,22 +415,34 @@ for days in range(ndays):
                     stg = slist[closestl[fi][stas]]
                     tr = sz.select(station=stg)
                     sss[stas][:]=tr[0].data[timeindex-tlength:timeindex+tlength]
-                    
+                stg=slist[closestl[0][0]]    
                 #plt.figure(fi)
                 plt.suptitle('nearest station:'+stg+' '+str(ctimes[regionals[fi]]))
                 for plots in range(5):
                     plt.subplot(5,1,plots+1)
-                    cf=recSTALTA(sss[plots][:], int(50), int(500))
-                    peaks = triggerOnset(cf, 5, .2)
+                    cf=recSTALTA(sss[plots][:], int(40), int(500))
+                    peaks = triggerOnset(cf, 3, .5)
+                    peaksi=[]
+                    dummy=0  
+                    for peak in peaks:
+                        peak=peak[0]
+                        if alltimes[timeindex]>alltimes[timeindex-tlength+peak]:
+                            junk=alltimes[timeindex]-alltimes[timeindex-tlength+peak]
+                        else:
+                            junk=alltimes[timeindex-tlength+peak]-alltimes[timeindex]
+                        if (junk.seconds) >40:
+                            peaksi.append(dummy)
+                        dummy=dummy+1
+                    peaks= np.delete(peaks,peaksi,axis=0)                            
                     plt.text(alltimes[timeindex],0,slist[closestl[fi][plots]],color='red')
                     plt.plot(alltimes[timeindex-tlength:timeindex+tlength],sss[plots][:],'black')
                     plt.axis('tight')
                     plt.axvline(x=alltimes[timeindex])
                     for arc in range(len(peaks)):
-                        plt.axvline(x=alltimes[timeindex-tlength+peaks[arc][0]],color='orange')
+                        plt.axvline(x=alltimes[timeindex-tlength-20+peaks[arc][0]],color='orange')
                     if plots ==1:
                         if peaks != []:
-                            ptimes.append(UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]))
+                            ptimes.append(UTCDateTime(alltimes[timeindex-tlength-20+peaks[0][0]]))
                             confidence.append(len(peaks))
                         else:
                             ptimes.append(UTCDateTime(alltimes[timeindex]))
