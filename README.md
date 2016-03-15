@@ -15,12 +15,8 @@ LDK: A seismic array detection algorithm
 - [User Guide](#user-guide)
     - [General Usage](#general-usage)
     
-- [Commands](#commands)
-    - [YcmCompleter subcommands](#ycmcompleter-subcommands)
-- [Options](#options)
-- [FAQ](#faq)
-- [Contact](#contact)
-- [License](#license)
+- [GIT basics](#git)
+
 
 Intro
 -----
@@ -55,6 +51,9 @@ http://www.scipy.org/
 ### DETEX
 
 https://github.com/dchambers/detex.git
+To install with pip:
+
+pip install git+git://github.come/d-chambers/detex
 
 
 Quick Feature Summary
@@ -62,12 +61,9 @@ Quick Feature Summary
 
 ### General (all languages)
 
-* Super-fast identifier completer including tags files and syntax elements
-* Intelligent suggestion ranking and filtering
-* File and path suggestions
-* Suggestions from Vim's OmniFunc
-* UltiSnips snippet suggestions
-
+* Uses coherent energy in broadband, low amplitude ranges to identify seismic events across an array
+* Output is a pick table of detections, and templates for each detection -organized in day directories
+* Current support for ANF catalog 
 
 
 User Guide
@@ -75,23 +71,13 @@ User Guide
 
 ### General Usage
 
-- If the offered completions are too broad, keep typing characters; YCM will
-  continue refining the offered completions based on your input.
-- Filtering is "smart-case" sensitive; if you are typing only lowercase letters,
-  then it's case-insensitive. If your input contains uppercase letters, then the
-  uppercase letters in your query must match uppercase letters in the completion
-  strings (the lowercase letters still match both). So, "foo" matches "Foo" and
-  "foo", "Foo" matches "Foo" and "FOO" but not "foo".
-- Use the TAB key to accept a completion and continue pressing TAB to cycle
-  through the completions. Use Shift-TAB to cycle backwards. Note that if you're
-  using console Vim (that is, not Gvim or MacVim) then it's likely that the
-  Shift-TAB binding will not work because the console will not pass it to Vim.
-  You can remap the keys; see the _[Options][]_ section below.
+- Currently, the target directory is hardcoded and needs to point somewhere appropriate
+- for ANF catalog filtering 
 
-Knowing a little bit about how YCM works internally will prevent confusion. YCM
-has several completion engines: an identifier-based completer that collects all
-of the identifiers in the current file and other files you visit (and your tags
-files) and searches them when you type (identifiers are put into per-filetype
-groups).
+GIT Basics
+----------
 
+Make sure Git is set up locally: https://help.github.com/articles/set-up-git/
 
+- To pull the latest version from GIT the first time, clone the LDK repository (password protected)
+git clone https://github.com/quapity/LDK.git

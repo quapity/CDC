@@ -37,24 +37,24 @@ import Util as Ut
 import geopy.distance as pydist
 #############################
 
-yr = '2011'
-mo = '08'
-dy = '11'
-hr = '18'
+yr = '2009'
+mo = '11'
+dy = '12'
+hr = '20'
 mn = '00'
 sc = '00'
 
 
-wb = 2 #which basin # are we working on for station list import
+wb = 1 #which basin # are we working on for station list import
 maketemplates = 1
 tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
-duration = 7200 +edgebuffer
+duration = 86400 +edgebuffer
 ndays= 1 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
-thresholdv= 1.5
+thresholdv= 2.3
 deltaf = 40
 nseconds = 7200
 npts = int(deltaf*(nseconds+edgebuffer))
@@ -63,9 +63,11 @@ overlap=4
 hop = fftsize / overlap
 w = scipy.hanning(fftsize+1)[:-1] 
 
-levels = [10,20,25,40,50,60,80,100,110]
-colors=['#081d58','#253494','#225ea8', '#1d91c0','#41b6c4', '#7fcdbb', '#c7e9b4', '#edf8b1','#ffffd9']
-linewidths=[.5,.5,.5, 0.75, 0.6, 0.6, 0.6,.5,.5]
+levels = [5,25,80]
+#colors=['#081d58','#253494','#225ea8', '#1d91c0','#41b6c4', '#7fcdbb', '#c7e9b4', '#edf8b1','#ffffd9']
+colors=['#081d58','#c71585', '#1d91c0']
+linewidths=[.5,1.5,.5]
+#linewidths=[.5,1.5,1.5, 0.5, 0.6, .6, 0.6,.5,.5]
 
  
 
@@ -102,6 +104,7 @@ for days in range(ndays):
     
     sz.merge(fill_value=0)
     sz.detrend()
+    sz.taper(.01)
     sz.sort()
     sz.filter('highpass',freq=5.0)
 #    import pickle as pkl
@@ -145,7 +148,7 @@ for days in range(ndays):
         newlon[i]=longitudes[reindex]
         distances.append(pydist.vincenty([newlat[i],newlon[i]],[latmin,lonmin]).meters)
     #####this is where maths happends and arrays are created
-    for block in range(1):
+    for block in range(12):
         ll,lo,stalist,vizray,dist=[],[],[],[],[]
         shorty = 0
         for z in range(len(snames)):
@@ -195,7 +198,7 @@ for days in range(ndays):
         localE,globalE,closesti=Ut.getCatalogData(tt,nseconds,lo,ll)
 
         ax = plt.subplot()
-        closesti = np.flipud(closesti) 
+        #closesti = np.flipud(closesti) 
         #unstructured triangular mesh with stations as verticies, mask out the long edges
         triang = tri.Triangulation(lo, ll)
         mask,edgeL = Ut.long_edges(lo,ll, triang.triangles)
@@ -206,7 +209,7 @@ for days in range(ndays):
         av,aa,xc,yc,centroids,ctimes,ctimesdate,junkx,junky=[],[],[],[],[],[],[],[],[]
         for each in range(len(rayz[0,:])):
             cs=plt.tricontour(triang,rayz[0:,each],mask=mask, levels=levels,colors=colors, linewidths=linewidths)
-            contour = cs.collections[2].get_paths()
+            contour = cs.collections[1].get_paths()
             for alls in range(len(contour)):
                 vs=contour[alls].vertices
                 a = Ut.PolygonArea(vs)
@@ -249,7 +252,7 @@ for days in range(ndays):
 #       that occur same time but locate far apart from eachother.
         coordinatesz = np.transpose(centroids)
         avz=av
-        cf=recSTALTA(av, int(50), int(500))
+        cf=recSTALTA(av, int(3), int(50))
         peaks = triggerOnset(cf, 5, .2)
         idxx,iii=[],[]
         doubles,regionals,localev=[],[],[]
@@ -441,7 +444,7 @@ for days in range(ndays):
                     for arc in range(len(peaks)):
                         plt.axvline(x=alltimes[timeindex-tlength-20+peaks[arc][0]],color='orange')
                     if plots ==1:
-                        if peaks != []:
+                        if len(peaks)>0:
                             ptimes.append(UTCDateTime(alltimes[timeindex-tlength-20+peaks[0][0]]))
                             confidence.append(len(peaks))
                         else:
@@ -518,9 +521,11 @@ for days in range(ndays):
         df1= pd.concat(df1)
 
     ################################################
-#%%
+#%%     
+        fig = plt.figure()
         plt.cla()
         ax = plt.gca()
+        fig.set_size_inches(18,14)
         #plot it all
         for i in range(len(localE)):
             plt.scatter(mdates.date2num(UTCDateTime(localE.time[i])),closesti[i],s=100,color='c')
@@ -536,20 +541,66 @@ for days in range(ndays):
          
         for i in range(len(globalE)):
             plt.scatter(mdates.date2num(UTCDateTime(globalE.time[i])),0,s=100,color='b')
-        plt.imshow(np.flipud(rayz),extent = [mdates.date2num(tt), mdates.date2num(tt+nseconds),  0, len(slist)],
-                     aspect='auto',interpolation='nearest',cmap='bone',vmin=-30,vmax=80)
+        plt.imshow(np.flipud(rayz),extent = [mdates.date2num(tt), mdates.date2num(tt+nseconds+edgebuffer),  0, len(slist)],
+                     aspect='auto',interpolation='nearest',cmap='bone')
         ax.set_adjustable('box-forced')
         ax.xaxis_date() 
         plt.yticks(np.arange(len(ll)))
         ax.set_yticklabels(slist)
         tdate = yr+'-'+mo+'-'+str(dayat).zfill(2)
         plt.title(tdate)
-     
+        ax.grid(color='black')
         ss = str(tt)
         ss = ss[0:13]
         kurs = "%s/"%s +"%s.png"%ss
         svpath=homedir+kurs
         plt.savefig(svpath, format='png')
+        
+#%%
+#tstr = []
+#for i in range(len(timevector)):
+#    tstr.append(str(timevector[i]))
+#fig = plt.figure()
+#import matplotlib
+#from matplotlib import animation
+#def animate(g):
+#    
+#    
+#    fig.clf()
+#    ax = plt.gca()
+#    fig.set_size_inches(18,14)
+#    m = Basemap(projection='cyl',llcrnrlat=min(ll),urcrnrlat=max(ll),llcrnrlon=min(lo),urcrnrlon=max(lo),resolution='c')
+#    #m = Basemap(projection='cyl',llcrnrlat=min(ll),urcrnrlat=max(ll),llcrnrlon=min(lo),urcrnrlon=max(lo),resolution='c')
+#    m.drawstates(color='grey')
+#    m.drawcoastlines(color='grey')
+#    m.drawcountries(color='grey')
+#
+#    for i, txt in enumerate(slist):
+#        ax.annotate(txt, (lo[i],ll[i]),color='lavender')
+#    #for i in range(len(ll)):
+#    #    plt.text(ll[i],lo[i],slist[i],color='white')
+#    for i in range(len(regionals)):
+#        plt.scatter(coordinatesz[0][regionals[i]],coordinatesz[1][regionals[i]],color='lavender',s=75, alpha=.75)
+#    for i in range(len(doubles)):
+#        plt.scatter(coordinatesz[0][localev[i]],coordinatesz[1][localev[i]],color='cyan',s=75, alpha=.75)
+#    plt.triplot(triang, lw=0.25, color='grey')
+#    ax.set_axis_bgcolor([.2, .2, .25])
+#    #ax.set_axis_bgcolor([1, 1, 1])
+#    #levels = [20,70,220,550,600]
+#    plt.tricontour(triang,rayz[0:,g],mask=mask,levels=levels,colors=colors,linewidths=linewidths)
+#    plt.tricontour(triang,rayz[0:,g-1],mask=mask,levels=levels,colors=colors,linewidths=linewidths)
+#    plt.tricontour(triang,rayz[0:,g-2],mask=mask,levels=levels,colors=colors,linewidths=linewidths)
+#    plt.tricontour(triang,rayz[0:,g-3],mask=mask,levels=levels,colors=colors,linewidths=linewidths)           
+#    plt.text(0,0, tstr[g],transform=ax.transAxes,color='grey',fontsize=16)
+#    fig.canvas.draw()
+#    
+#    
+#    
+#    
+#    
+#    
+#anim = animation.FuncAnimation(fig, animate,frames=len(sgram)-2, interval=1, blit=False)
+#anim.save('2009_11_12.mp4',codec='mpeg4', fps=30, bitrate=50000)
 #%%
         blockette = blockette+(npts-nptsf)
         tt = tt+nseconds
