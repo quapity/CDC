@@ -48,7 +48,7 @@ def get_edge_ratio(x,y,triangles,ratio):
     median_edge=np.median(out)
     return mask_length,median_edge
 
-def long_edges(x, y, triangles, ratio=5.5):
+def long_edges(x, y, triangles, ratio=1.5):
     olen,edgeL=get_edge_ratio(x,y,triangles,ratio)
     out = []
     for points in triangles:
@@ -97,8 +97,8 @@ def saturateArray(array):
         fill = np.sum(array,axis=1)
     if np.sum(array[i][:]) >= 1.5*np.std(fill):
         array[i][:]= np.median(array)        
-    junk = np.where(array>=90)
-    array[junk]=90
+    junk = np.where(array>=50)
+    array[junk]=50
     junk = np.where(array<=-40)
     array[junk]=-40
     return array
