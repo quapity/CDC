@@ -39,7 +39,7 @@ import geopy.distance as pydist
 
 yr = '2011'
 mo = '08'
-dy = '01'
+dy = '02'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -51,7 +51,7 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 31 #however many days you want to generate images for
+ndays= 30 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 1.5
@@ -84,6 +84,7 @@ tt = UTCDateTime(datest)
 #####################################################################
 # Now start making the detections, in 2 hour data chunks, 1 day at a time
 for days in range(ndays):
+    plt.close('all')
     counter_3char = str(counter).zfill(3)
     datest = yr+str('-')+mo+str('-')+str(dayat)+str('T')+hr+str(':')+mn+str('.')+sc 
     tt = UTCDateTime(datest)
