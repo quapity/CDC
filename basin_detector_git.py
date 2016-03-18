@@ -39,7 +39,7 @@ import geopy.distance as pydist
 
 yr = '2011'
 mo = '08'
-dy = '02'
+dy = '01'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -51,7 +51,7 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 5 #however many days you want to generate images for
+ndays= 31 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 1.5
@@ -458,8 +458,9 @@ for days in range(ndays):
                         confidence.append(len(peaks))
                     else:
                         ptimes.append(UTCDateTime(alltimes[timeindex]))
-                        confidence.append(2)   
-                        
+                        confidence.append(2) 
+                
+                #ptimes = np.reshape(ptimes,[len(ptimes)/5,5])       
                 df.S1[fi]= slist[closestl[fi][0]]
                 df.S1time[fi] = ptimes[0]
                 df.S2[fi]= slist[closestl[fi][1]]
@@ -471,6 +472,7 @@ for days in range(ndays):
                 df.S5[fi]= slist[closestl[fi][4]]
                 df.S5time[fi] = (ptimes[4])
                 df.Confidence[fi]= confidence[0]
+                ptimes = []
                 svname=homedir+str(s)+"/image"+ss[11:13]+"_pick_"+str(fi+1)+".png"
                 plt.savefig(svname,format='png')
                 plt.clf()
