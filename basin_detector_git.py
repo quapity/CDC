@@ -39,7 +39,7 @@ import geopy.distance as pydist
 
 yr = '2011'
 mo = '08'
-dy = '02'
+dy = '29'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -51,7 +51,7 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 30 #however many days you want to generate images for
+ndays= 3 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 1.5
@@ -409,7 +409,11 @@ for days in range(ndays):
 #%%#save templates from this round of picks to verify on closest station
         ss = str(tt)
         ss = ss[0:13] 
-        index = range(len(detections))
+        if 'detections' in locals():
+            index = range(len(detections))
+        else: 
+            index=[0]
+            detections = []
         df = pd.DataFrame(data=d, index=index)
         if maketemplates == 1 and len(detections) > 0:
             ptimes,confidence = [],[]
