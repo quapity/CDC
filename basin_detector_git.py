@@ -30,28 +30,28 @@ from obspy.taup import TauPyModel as TauP
 model = TauP(model="iasp91")
 from obspy.core.util import locations2degrees as loc2d
 homedir ='/home/linville/Desktop/LDK/'
-#homedir = '/Users/dkilb/Desktop/DebDocuments/Projects/Current/ES_minions/'
+#homedir = '/Users/dkilb/Desktop/DebDocuments/Projects/Current/ES_minions/LDK/'
 import sys
 sys.path.append(homedir)
 import Util as Ut
 import geopy.distance as pydist
 #############################
 
-yr = '2011'
-mo = '08'
-dy = '29'
+yr = '2009'
+mo = '01'
+dy = '01'
 hr = '00'
 mn = '00'
 sc = '00'
 
 
-wb = 2 #which basin # are we working on for station list import
+wb = 1 #which basin # are we working on for station list import
 maketemplates = 1
 tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 3 #however many days you want to generate images for
+ndays= 25 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 1.5
@@ -105,7 +105,7 @@ for days in range(ndays):
     
     sz.merge(fill_value=0)
     sz.detrend()
-    #sz.taper(.01)
+    #sz.taper(.001)
     sz.sort()
     sz.filter('highpass',freq=5.0)
 #    import pickle as pkl
@@ -260,7 +260,7 @@ for days in range(ndays):
             junk = ctimes[idxx[i+1]]-ctimes[idxx[i]]
             junk1 = centroids[idxx[i]]
             junk2 = centroids[idxx[i+1]]
-            if junk.seconds < 180 and pydist.vincenty(junk2,junk1).meters < 160000:
+            if junk.seconds < 180 and pydist.vincenty(junk2,junk1).meters < 320000:
                 iii.append(idxx[i+1])
         
         idxx=set(idxx)-set(iii)
@@ -431,7 +431,10 @@ for days in range(ndays):
                 for stas in range(5):
                     stg = slist[closestl[fi][stas]]
                     tr = sz.select(station=stg)
-                    sss[stas][:]=tr[0].data[timeindex-tlength:timeindex+tlength]
+                    if detections[fi] < 400:
+                        sss[stas][4800:]=tr[0].data[timeindex:timeindex+tlength] 
+                    else:
+                        sss[stas][:]=tr[0].data[timeindex-tlength:timeindex+tlength]
                 stg=slist[closestl[0][0]]    
                 #plt.figure(fi)
                 plt.suptitle('nearest station:'+stg+' '+str(ctimes[detections[fi]]))
@@ -452,7 +455,7 @@ for days in range(ndays):
                         dummy=dummy+1
                     peaks= np.delete(peaks,peaksi,axis=0)                            
                     plt.text(alltimes[timeindex],0,slist[closestl[fi][plots]],color='red')
-                    plt.plot(alltimes[timeindex-tlength:timeindex+tlength],sss[plots][:],'black')
+                    plt.plot(Ut.templatetimes(alltimes[timeindex]),sss[plots][:],'black')
                     plt.axis('tight')
                     plt.axvline(x=alltimes[timeindex])
                     for arc in range(len(peaks)):
