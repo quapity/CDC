@@ -39,7 +39,7 @@ import geopy.distance as pydist
 
 yr = '2009'
 mo = '01'
-dy = '01'
+dy = '18'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -51,10 +51,10 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 10 #however many days you want to generate images for
+ndays= 20 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
-thresholdv= 1.2
+thresholdv= 1.5
 deltaf = 40
 nseconds = 7200
 npts = int(deltaf*(nseconds+edgebuffer))
@@ -129,7 +129,7 @@ for days in range(ndays):
     #%%
     nptsf = edgebuffer*deltaf
     blockette = 0
-    d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'S1': 'NA','S1time': 'NA', 'Magnitude': -999.00, 'Confidence': -1,'S2':'NA','S3':'NA',
+    d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'S1': 'NA','S1time': 'NA', 'Magnitude': -999.00, 'Confidence': 0,'S2':'NA','S3':'NA',
         'S4': 'NA', 'S5': 'NA','S2time': 'NA','S3time': 'NA','S4time': 'NA','S5time': 'NA','Type': 'Event'}
     index = [0]; df1 = pd.DataFrame(data=d, index=index)   
     stations,latitudes,longitudes,distances=[],[],[],[]
@@ -314,36 +314,40 @@ for days in range(ndays):
 
                 for j in range(len(globalE)):
                     #get distance between stations and depth for theoretical ttime calc
+                    # the time buffers are somewhat arbitrary
                     dep = globalE.depth[j]
                     dit = loc2d(centroids[idx[i]][1],centroids[idx[i]][0], globalE.Lat[j],globalE.Lon[j])
                     arrivals = model.get_travel_times(dep,dit,phase_list=['P'])
-               
+                    #if no calculated tt but sta/lta peak
                     if len(arrivals) == 0 and len(peaks)!=0:
                         junk= UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]) - UTCDateTime(globalE.DateString[j])
-                        if junk > -120 and junk < 120:
+                        if junk > -40 and junk < 40:
                             doubles.append(idx[i])
                             ltxglobal.append(UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]))
                             ltxglobalexist.append(0)
                         else:
                             ltxglobalexist.append(1)
+                    #if no calculated tt and no sta/lta peak use ltx time
                     elif len(arrivals) == 0 and len(peaks)==0:
                         junk= UTCDateTime(alltimes[timeindex]) - UTCDateTime(globalE.DateString[j])
-                        if junk > -120 and junk < 120:
+                        if junk > -40 and junk < 40:
                             doubles.append(idx[i])
                             ltxglobal.append(UTCDateTime(alltimes[timeindex]))
                             ltxglobalexist.append(0)
                         else:
                             ltxglobalexist.append(1)
+                    #if there are calculated arrivals and sta/lta peak
                     elif len(peaks) != 0:
                         junk= UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]) - (UTCDateTime(globalE.DateString[j]) + datetime.timedelta(seconds = arrivals[0].time))
-                        if junk > -45 and junk < 45:
+                        if junk > -30 and junk < 30:
                             doubles.append(idx[i])
                             ltxglobal.append(UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]))
                             ltxglobalexist.append(0)
                         else:
                             ltxglobalexist.append(1)
+                    #if there are calculated arrivals and no sta/lta peaks
                     else:
-                        #but if you can't, use the LTX determined time
+                        
                         junk= UTCDateTime(alltimes[timeindex]) - (UTCDateTime(globalE.DateString[j]) + datetime.timedelta(seconds = arrivals[0].time))
                         if junk > -60 and junk < 60:
                             doubles.append(idx[i])
@@ -351,7 +355,6 @@ for days in range(ndays):
                         else:
                             ltxglobalexist.append(1)
                 #look for overlap with ANF local
-                
                 if len(localE) > 0 and len(peaks) != 0:
                     for eachlocal in range(len(localE)):
                         #junk= UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]) - UTCDateTime(localE.DateString[eachlocal])
@@ -381,7 +384,7 @@ for days in range(ndays):
                 if localev.count(doubles[dl]) >0:
                     doubles.pop(dl)   
             detections = []
-            detections = set(idx)-set(doubles)
+            detections = set(idx)#-set(doubles)
             detections = list(detections)
             detections.sort()
             idx = detections
@@ -575,19 +578,30 @@ for days in range(ndays):
         fig.set_size_inches(18,14)
         #plot it all
         for i in range(len(localE)):
-            plt.scatter(mdates.date2num(UTCDateTime(localE.time[i])),closesti[i],s=100,color='c')
+            plt.scatter(mdates.date2num(UTCDateTime(localE.time[i])),closesti[i],s=100,color='c', alpha=.8)
          
         for i in range(len(detections)):
-            plt.scatter(mdates.date2num(ctimes[detections[i]]),closestl[i][0],s=100,color='m',alpha=.8)
             
-        for i in range(len(doubles)):
-            plt.scatter(mdates.date2num(ctimes[doubles[i]]),closestd[i],s=100,color='orange',alpha=.8)
-        
-        for i in range(len(localev)):
-            plt.scatter(mdates.date2num(ctimes[localev[i]]),closestp[i],s=100,color='green',alpha=.8)
-         
+            if localev.count(detections[i]) ==1:
+                color='c'
+            elif doubles.count(detections[i])==1:
+                color='blue'
+            else:
+                color='white'
+            if dtype[i] =='blast':
+                facecolor='none'
+            else: 
+                facecolor = color
+            plt.scatter(mdates.date2num(ctimes[detections[i]]),closestl[i][0],s=200,color=color,facecolor=facecolor)
+           
+#        for i in range(len(doubles)):
+#            plt.scatter(mdates.date2num(ctimes[doubles[i]]),closestd[i],s=100,edgecolor='orange',facecolor='none')
+#        
+#        for i in range(len(localev)):
+#            plt.scatter(mdates.date2num(ctimes[localev[i]]),closestp[i],s=100,facecolor='none',edgecolor='yellow')
+#         
         for i in range(len(globalE)):
-            plt.scatter(mdates.date2num(UTCDateTime(globalE.time[i])),0,s=100,color='b')
+            plt.scatter(mdates.date2num(UTCDateTime(globalE.time[i])),0,s=100, color='b', alpha=.8)
         plt.imshow(np.flipud(rayz),extent = [mdates.date2num(tt), mdates.date2num(tt+nseconds+edgebuffer),  0, len(slist)],
                      aspect='auto',interpolation='nearest',cmap='bone',vmin=-30,vmax=110)
         ax.set_adjustable('box-forced')

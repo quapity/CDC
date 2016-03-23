@@ -661,6 +661,7 @@ def getbulk(basin,tt,duration):
      ("TA","K32A","*","BHZ",tt,tt+duration),
      ("TA","K33A","*","BHZ",tt,tt+duration),
      ("TA","K34A","*","BHZ",tt,tt+duration),
+     ("IU","RSSD","00","BHZ",tt,tt+duration),
 #     ("TA","KSCO","*","BHZ",tt,tt+duration),
 #     ("TA","L20A","*","BHZ",tt,tt+duration),
 #     ("TA","L21A","*","BHZ",tt,tt+duration),
