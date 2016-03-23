@@ -39,7 +39,7 @@ import geopy.distance as pydist
 
 yr = '2009'
 mo = '01'
-dy = '01'
+dy = '02'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -51,7 +51,7 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 25 #however many days you want to generate images for
+ndays= 5 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 1.5
@@ -129,7 +129,7 @@ for days in range(ndays):
     #%%
     nptsf = edgebuffer*deltaf
     blockette = 0
-    d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'S1': 'NA','S1time': 'NA', 'Magnitude': -999, 'Confidence': -1,'S2':'NA','S3':'NA',
+    d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'S1': 'NA','S1time': 'NA', 'Magnitude': -999.00, 'Confidence': -1,'S2':'NA','S3':'NA',
         'S4': 'NA', 'S5': 'NA','S2time': 'NA','S3time': 'NA','S4time': 'NA','S5time': 'NA',}
     index = [0]; df1 = pd.DataFrame(data=d, index=index)   
     stations,latitudes,longitudes,distances=[],[],[],[]
@@ -377,7 +377,9 @@ for days in range(ndays):
                             ltxlocalexist.append(0)
                         else:
                             ltxlocalexist.append(1)
-                
+            for dl in range(len(doubles)):
+                if localev.count(doubles[dl]) >0:
+                    doubles.pop(dl)   
             detections = []
             detections = set(idx)-set(doubles)
             detections = list(detections)
@@ -417,11 +419,15 @@ for days in range(ndays):
         df = pd.DataFrame(data=d, index=index)
         if maketemplates == 1 and len(detections) > 0:
             ptimes,confidence = [],[]
+            dum=0
             for fi in range(len(detections)):
                 if localev.count(detections[fi]) == 0:
                     df.Contributor[fi]='LTX'
                 else:
                     df.Contributor[fi]='ANF,LTX'
+                    allmags = [localE.ms[dum],localE.mb[dum],localE.ml[dum]]
+                    df.Magnitude[fi]=np.max(allmags)
+                    dum = dum+1
                 df.Latitude[fi] = coordinatesz[1][detections[fi]]
                 df.Longitude[fi]=coordinatesz[0][detections[fi]]
                 plt.cla()
@@ -431,8 +437,10 @@ for days in range(ndays):
                 for stas in range(5):
                     stg = slist[closestl[fi][stas]]
                     tr = sz.select(station=stg)
-                    if detections[fi] < 400:
+                    if ctimes[detections[fi]]-datetime.timedelta(seconds=120) < tt.datetime:
                         sss[stas][4800:]=tr[0].data[timeindex:timeindex+tlength] 
+                    elif ctimes[detections[fi]]+datetime.timedelta(seconds=120) > tt.datetime + datetime.timedelta(seconds=nseconds+edgebuffer):
+                        sss[stas][0:4800]=tr[0].data[timeindex:timeindex+tlength]
                     else:
                         sss[stas][:]=tr[0].data[timeindex-tlength:timeindex+tlength]
                 stg=slist[closestl[0][0]]    
