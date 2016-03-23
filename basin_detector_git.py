@@ -39,7 +39,7 @@ import geopy.distance as pydist
 
 yr = '2009'
 mo = '01'
-dy = '02'
+dy = '01'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -51,10 +51,10 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 5 #however many days you want to generate images for
+ndays= 10 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
-thresholdv= 1.5
+thresholdv= 1.2
 deltaf = 40
 nseconds = 7200
 npts = int(deltaf*(nseconds+edgebuffer))
@@ -92,7 +92,7 @@ for days in range(ndays):
 
     #############################
     
-    bulk = Ut.getbulk(wb,tt,duration)
+    bulk,blastsites = Ut.getbulk(wb,tt,duration)
     s = 'basin%s/'%wb+yr+str('_')+counter_3char
     if not os.path.exists(s):
         os.makedirs(s)     
@@ -130,7 +130,7 @@ for days in range(ndays):
     nptsf = edgebuffer*deltaf
     blockette = 0
     d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'S1': 'NA','S1time': 'NA', 'Magnitude': -999.00, 'Confidence': -1,'S2':'NA','S3':'NA',
-        'S4': 'NA', 'S5': 'NA','S2time': 'NA','S3time': 'NA','S4time': 'NA','S5time': 'NA',}
+        'S4': 'NA', 'S5': 'NA','S2time': 'NA','S3time': 'NA','S4time': 'NA','S5time': 'NA','Type': 'Event'}
     index = [0]; df1 = pd.DataFrame(data=d, index=index)   
     stations,latitudes,longitudes,distances=[],[],[],[]
     for i in range(len(inv.networks)):
@@ -385,6 +385,7 @@ for days in range(ndays):
             detections = list(detections)
             detections.sort()
             idx = detections
+            dtype = Ut.markType(detections,blastsites,centroids,localev,localE)
             #get the nearest station also for cataloged events
             closestd = np.zeros([len(doubles)])
             distarray = np.zeros([len(ll)])
@@ -430,6 +431,7 @@ for days in range(ndays):
                     dum = dum+1
                 df.Latitude[fi] = coordinatesz[1][detections[fi]]
                 df.Longitude[fi]=coordinatesz[0][detections[fi]]
+                df.Type[fi] = dtype[fi]
                 plt.cla()
                 ax = plt.gca()
                 timeindex=bisect.bisect_left(alltimes, (ctimes[detections[fi]]))

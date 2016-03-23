@@ -130,6 +130,40 @@ def getCatalogData(tt,nseconds,lo,ll):
         closesti.append(np.argmin(distarray))
         distarray = []
     return localE,globalE,closesti
+
+def bestCentroid(detections,localev,centroids,localE):
+    dummy=0
+    centroid = np.empty([len(detections),2])    
+    for each in range(len(detections)):
+        if localev.count(detections[each]) >0:
+            centroid[each][0]=localE.Lat[dummy]
+            centroid[each][1]=localE.Lon[dummy]
+            dummy=dummy+1
+        else:
+            centroid[each][0]=centroids[detections[each]][1]
+            centroid[each][1]=centroids[detections[each]][0]
+        
+    return centroid
+
+   
+def markType(detections,blastsites,centroids,localev,localE):
+    cents= bestCentroid(detections,localev,centroids,localE)    
+    temp = np.empty([len(detections),len(blastsites)])
+    dtype = []
+    for event in range(len(detections)):
+        for each in range(len(blastsites)):
+            
+            if blastsites[each][1] < cents[event][0] < blastsites[each][0] and blastsites[each][2] < cents[event][1] < blastsites[each][3]:
+                temp[event][each]=1
+            else:
+                temp[event][each]=0
+        if sum(temp[event]) != 0:
+            dtype.append('blast')
+        else:
+            dtype.append('earthquake')
+    return dtype
+    
+    
 ### get station lists for specific basin    
 def getbulk(basin,tt,duration):
     """basin= basin number to get station list"""
@@ -364,6 +398,7 @@ def getbulk(basin,tt,duration):
 #       ("TA", "X42A", "*", "BHZ", tt, tt+duration),
 
 ]
+        blastsites=[]
     elif basin ==3:
         bulk=[ ("TA", "D41A", "*", "BHZ", tt, tt+duration),
      ("TA", "D46A", "*", "BHZ", tt, tt+duration),
@@ -465,6 +500,7 @@ def getbulk(basin,tt,duration):
      ("TA", "O52A", "*", "BHZ", tt, tt+duration),
      ("TA", "O53A", "*", "BHZ", tt, tt+duration),
      ("TA", "SFIN", "*", "BHZ", tt, tt+duration)]
+        blastsites = [] 
     elif basin ==1:
         bulk=[ ("TA", "D41A", "*", "BHZ", tt, tt+duration),
      ("TA","A19A","*","BHZ",tt,tt+duration),
@@ -784,4 +820,5 @@ def getbulk(basin,tt,duration):
 #     ("TA","U34A","*","BHZ",tt,tt+duration),
 #     ("TA","U35A","*","BHZ",tt,tt+duration)]
      ]
-    return bulk
+        blastsites=[(44.56,43.37,-105.83,-105.03),(45.17,44.94,-107.03,-106.73),(45.94,45.70,-107.14,-106.49)]
+    return bulk,blastsites
