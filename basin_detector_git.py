@@ -6,6 +6,13 @@ Created on Wed Jan  6 12:08:15 2016
 
 Scipt to generate array images in specified year_day directories.
 From: Linville, L., K. Pankow, D. Kilb, and A. Velasco (2014), doi:10.1002/2014JB011529.
+
+Parameters
+------------------
+wb : int, which basin number to import station/blast site lists from
+ndays: int, how many days to process, in 2 hour blocks
+thresholdv: float, scalar, what value above the avg area based on station space
+levels: which contours to generate and base detections off
 """
 
  
@@ -39,7 +46,7 @@ import geopy.distance as pydist
 
 yr = '2009'
 mo = '01'
-dy = '18'
+dy = '04'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -51,7 +58,7 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 20 #however many days you want to generate images for
+ndays= 10 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 1.5
@@ -260,7 +267,7 @@ for days in range(ndays):
             junk = ctimes[idxx[i+1]]-ctimes[idxx[i]]
             junk1 = centroids[idxx[i]]
             junk2 = centroids[idxx[i+1]]
-            if junk.seconds < 180 and pydist.vincenty(junk2,junk1).meters < 320000:
+            if junk.seconds < 30 and pydist.vincenty(junk2,junk1).meters < 420000:
                 iii.append(idxx[i+1])
         
         idxx=set(idxx)-set(iii)
@@ -388,7 +395,7 @@ for days in range(ndays):
             detections = list(detections)
             detections.sort()
             idx = detections
-            dtype = Ut.markType(detections,blastsites,centroids,localev,localE)
+            dtype = Ut.markType(detections,blastsites,centroids,localev,localE,ctimes)
             #get the nearest station also for cataloged events
             closestd = np.zeros([len(doubles)])
             distarray = np.zeros([len(ll)])

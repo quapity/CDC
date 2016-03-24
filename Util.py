@@ -7,6 +7,7 @@ Utilities for LTX detections
 """
 import numpy as np
 import datetime
+
 ##functions for computing polygon area and running mean etc
 def PolygonArea(corners):
     n = len(corners) # of corners
@@ -131,14 +132,21 @@ def getCatalogData(tt,nseconds,lo,ll):
         distarray = []
     return localE,globalE,closesti
 
-def bestCentroid(detections,localev,centroids,localE):
-    dummy=0
-    centroid = np.empty([len(detections),2])    
+
+def bestCentroid(detections,localev,centroids,localE,ctimes):
+    import bisect
+    from obspy import UTCDateTime
+    centroid = np.empty([len(detections),2])
+    atimes=[]
+    for j in range(len(localE)):
+        atimes.append(UTCDateTime(localE.DateString[j]).datetime)
+       
     for each in range(len(detections)):
+        
         if localev.count(detections[each]) >0:
-            centroid[each][0]=localE.Lat[dummy]
-            centroid[each][1]=localE.Lon[dummy]
-            dummy=dummy+1
+            localEi=bisect.bisect_left(atimes, (ctimes[detections[each]])) 
+            centroid[each][0]=localE.Lat[localEi-1]
+            centroid[each][1]=localE.Lon[localEi-1]
         else:
             centroid[each][0]=centroids[detections[each]][1]
             centroid[each][1]=centroids[detections[each]][0]
@@ -146,8 +154,8 @@ def bestCentroid(detections,localev,centroids,localE):
     return centroid
 
    
-def markType(detections,blastsites,centroids,localev,localE):
-    cents= bestCentroid(detections,localev,centroids,localE)    
+def markType(detections,blastsites,centroids,localev,localE,ctimes):
+    cents= bestCentroid(detections,localev,centroids,localE,ctimes)    
     temp = np.empty([len(detections),len(blastsites)])
     dtype = []
     for event in range(len(detections)):
