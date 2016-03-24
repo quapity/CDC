@@ -455,6 +455,7 @@ for days in range(ndays):
                         sss[stas][0:4800]=tr[0].data[timeindex-tlength:timeindex]
                     else:
                         sss[stas][:]=tr[0].data[timeindex-tlength:timeindex+tlength]
+                sss=np.nan_to_num(sss)
                 stg=slist[closestl[0][0]]    
                 #plt.figure(fi)
                 plt.suptitle('nearest station:'+stg+' '+str(ctimes[detections[fi]]))
