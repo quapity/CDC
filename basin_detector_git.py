@@ -445,7 +445,7 @@ for days in range(ndays):
                 plt.cla()
                 ax = plt.gca()
                 timeindex=bisect.bisect_left(alltimes, (ctimes[detections[fi]]))
-                sss = np.empty([5,tlength*2])
+                sss = np.zeros([5,tlength*2])
                 for stas in range(5):
                     stg = slist[closestl[fi][stas]]
                     tr = sz.select(station=stg)
@@ -476,6 +476,7 @@ for days in range(ndays):
                         dummy=dummy+1
                     peaks= np.delete(peaks,peaksi,axis=0)                            
                     plt.text(alltimes[timeindex],0,slist[closestl[fi][plots]],color='red')
+                    sss[plots]=np.nan_to_num(sss[plots])
                     plt.plot(Ut.templatetimes(alltimes[timeindex]),sss[plots][:],'black')
                     plt.axis('tight')
                     plt.axvline(x=alltimes[timeindex])
