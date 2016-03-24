@@ -46,7 +46,7 @@ import geopy.distance as pydist
 
 yr = '2009'
 mo = '01'
-dy = '04'
+dy = '08'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -452,7 +452,7 @@ for days in range(ndays):
                     if ctimes[detections[fi]]-datetime.timedelta(seconds=120) < tt.datetime:
                         sss[stas][4800:]=tr[0].data[timeindex:timeindex+tlength] 
                     elif ctimes[detections[fi]]+datetime.timedelta(seconds=120) > tt.datetime + datetime.timedelta(seconds=nseconds+edgebuffer):
-                        sss[stas][0:4800]=tr[0].data[timeindex:timeindex+tlength]
+                        sss[stas][0:4800]=tr[0].data[timeindex-tlength:timeindex]
                     else:
                         sss[stas][:]=tr[0].data[timeindex-tlength:timeindex+tlength]
                 stg=slist[closestl[0][0]]    
