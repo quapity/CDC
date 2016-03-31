@@ -58,7 +58,7 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 10 #however many days you want to generate images for
+ndays= 1 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 1.5
@@ -69,7 +69,7 @@ fftsize=512
 overlap=4   
 hop = fftsize / overlap
 w = scipy.hanning(fftsize+1)[:-1] 
-
+delta=40.0
 levels = [5,20,40]
 #colors=['#081d58','#253494','#225ea8', '#1d91c0','#41b6c4', '#7fcdbb', '#c7e9b4', '#edf8b1','#ffffd9']
 colors=['#081d58','#c71585', '#1d91c0']
@@ -106,15 +106,15 @@ for days in range(ndays):
     inv= client.get_stations_bulk(bulk)
     sz = client.get_waveforms_bulk(bulk)
     for i in range(len(sz)):
-        if sz[i].stats.sampling_rate != 40.0:
-            sz[i].resample(40)
+        if sz[i].stats.sampling_rate != delta:
+            sz[i].resample(delta)
             print("Reset Sample rate for station: ",sz[i].stats.station)     
     
     sz.merge(fill_value=0)
     sz.detrend()
     #sz.taper(.001)
     sz.sort()
-    sz.filter('highpass',freq=5.0)
+    sz.filter('highpass',freq=1.0)
 #    import pickle as pkl
 #    f = open('inv.pkl','r')
 #    inv= pkl.load(f)
@@ -288,7 +288,9 @@ for days in range(ndays):
         if len(idx) > 0:
             distarray=[]
             dmin= np.zeros([5])
+            dval= np.zeros([5])
             closestl = np.empty([len(idx),5])
+            dvals = np.empty([len(idx),5])
             closestl=closestl.astype(np.int64)
             for i in range(len(idx)):
                 #find distance to the 5 nearest stations and save them for plotting templates
@@ -297,8 +299,10 @@ for days in range(ndays):
                 for all5 in range(5):
                     dmin[all5] =np.argmin(distarray)
                     dmin=dmin.astype(np.int64)
+                    dval[all5]=distarray[dmin[all5]]
                     distarray[dmin[all5]]= 9e10
                 closestl[i][:]=dmin
+                dvals[i][:]=dval
                 dmin=np.zeros_like(dmin)                
                 distarray=[]
                 #get timeseries for this pick
@@ -430,6 +434,7 @@ for days in range(ndays):
         df = pd.DataFrame(data=d, index=index)
         if maketemplates == 1 and len(detections) > 0:
             ptimes,confidence = [],[]
+            magi = np.zeros_like(dvals)
             dum=0
             for fi in range(len(detections)):
                 if localev.count(detections[fi]) == 0:
@@ -462,11 +467,14 @@ for days in range(ndays):
                 for plots in range(5):
                     plt.subplot(5,1,plots+1)
                     cf=recSTALTA(sss[plots][:], int(40), int(500))
-                    peaks = triggerOnset(cf, 3, .5)
+                    peaks = triggerOnset(cf, 5, .1)
                     peaksi=[]
                     dummy=0  
                     for peak in peaks:
+                        endi=peak[1]
                         peak=peak[0]
+                        mcdur=mcdur=alltimes[timeindex-tlength+endi]-alltimes[timeindex-tlength+peak]
+                        mdur=mcdur.total_seconds()
                         if alltimes[timeindex]>alltimes[timeindex-tlength+peak]:
                             junk=alltimes[timeindex]-alltimes[timeindex-tlength+peak]
                         else:
@@ -477,19 +485,28 @@ for days in range(ndays):
                     peaks= np.delete(peaks,peaksi,axis=0)                            
                     plt.text(alltimes[timeindex],0,slist[closestl[fi][plots]],color='red')
                     sss[plots]=np.nan_to_num(sss[plots])
-                    plt.plot(Ut.templatetimes(alltimes[timeindex]),sss[plots][:],'black')
+                    plt.plot(Ut.templatetimes(alltimes[timeindex],tlength,delta),sss[plots][:],'black')
                     plt.axis('tight')
                     plt.axvline(x=alltimes[timeindex])
                     for arc in range(len(peaks)):
-                        plt.axvline(x=alltimes[timeindex-tlength-20+peaks[arc][0]],color='orange')
+                        plt.axvline(x=alltimes[timeindex-tlength-10+peaks[arc][0]],color='orange')
+                        plt.axvline(x=alltimes[timeindex-tlength-10+peaks[arc][1]],color='purple')
                     
                     if len(peaks)>0:
-                        ptimes.append(UTCDateTime(alltimes[timeindex-tlength-20+peaks[0][0]]))
+                        ptimes.append(UTCDateTime(alltimes[timeindex-tlength-10+peaks[0][0]]))
                         confidence.append(len(peaks))
+                        magi[fi][plots]=(-2.25+2.32*np.log10(mdur)+0.0023*dvals[fi][plots]/1000)
+                        #magi[fi][plots]=(1.86*np.log10(mdur)-0.85)
                     else:
                         ptimes.append(UTCDateTime(alltimes[timeindex]))
-                        confidence.append(2) 
-                
+                        confidence.append(2)
+                magi= np.round(magi,decimals=2)
+                magii = pd.DataFrame(magi)
+                magu= magii[magii != 0]
+                if df.Contributor[fi]=='ANF,LTX':
+                    df.Magnitude[fi]=str(str(df.Magnitude[fi])+','+str(np.mean(magu,axis=1)[fi]))
+                else:
+                    df.Magnitude[fi]=np.mean(magu,axis=1)[fi]
                 #ptimes = np.reshape(ptimes,[len(ptimes)/5,5])       
                 df.S1[fi]= slist[closestl[fi][0]]
                 df.S1time[fi] = ptimes[0]
