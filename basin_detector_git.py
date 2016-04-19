@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+#from __future__ import print_function
+#def SSA_figures():
 """
 Created on Wed Jan  6 12:08:15 2016
 
@@ -17,7 +19,7 @@ levels: which contours to generate and base detections off
 
  
 #control plot behavior
-from __future__ import print_function
+
 import matplotlib.pylab as plt
 plt.switch_backend("nbagg")
 plt.style.use('ggplot')
@@ -36,7 +38,7 @@ from mpl_toolkits.basemap import Basemap
 from obspy.taup import TauPyModel as TauP
 model = TauP(model="iasp91")
 from obspy.core.util import locations2degrees as loc2d
-homedir ='/home/linville/Desktop/LDK/'
+homedir ='/home/linville/Documents/presentations/posters/SSA2016/'
 #homedir = '/Users/dkilb/Desktop/DebDocuments/Projects/Current/ES_minions/LDK/'
 import sys
 sys.path.append(homedir)
@@ -45,8 +47,8 @@ import geopy.distance as pydist
 #############################
 
 yr = '2009'
-mo = '01'
-dy = '08'
+mo = '03'
+dy = '01'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -58,7 +60,7 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 1 #however many days you want to generate images for
+ndays= 31 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 1.5
@@ -70,10 +72,7 @@ overlap=4
 hop = fftsize / overlap
 w = scipy.hanning(fftsize+1)[:-1] 
 delta=40.0
-levels = [5,20,40]
-#colors=['#081d58','#253494','#225ea8', '#1d91c0','#41b6c4', '#7fcdbb', '#c7e9b4', '#edf8b1','#ffffd9']
-colors=['#081d58','#c71585', '#1d91c0']
-linewidths=[.5,1.5,.5]
+
 #linewidths=[.5,1.5,1.5, 0.5, 0.6, .6, 0.6,.5,.5]
 
  
@@ -199,25 +198,30 @@ for days in range(ndays):
             slist[i]=stalist[junk[0][0]]
             dist[junk[0][0]]=0
         timevector = Ut.getfvals(tt,sgram,nseconds,edgebuffer)
+        #determine which level to use as detections 4* MAD
+        levels=[Ut.get_levels(rays)]
         #clean up the array 
         rayz = Ut.saturateArray(rayz)
         #get the ANF catalog events and get closest station
         
         localE,globalE,closesti=Ut.getCatalogData(tt,nseconds,lo,ll)
 
-        ax = plt.subplot()
+
         #closesti = np.flipud(closesti) 
         #unstructured triangular mesh with stations as verticies, mask out the long edges
         triang = tri.Triangulation(lo, ll)
         mask,edgeL = Ut.long_edges(lo,ll, triang.triangles)
         triang.set_mask(mask)
         kval=Ut.get_k(lo,ll,triang.triangles,thresholdv)
+        
 #%%
         #get contour areas by frame
         av,aa,xc,yc,centroids,ctimes,ctimesdate,junkx,junky=[],[],[],[],[],[],[],[],[]
         for each in range(len(rayz[0,:])):
-            cs=plt.tricontour(triang,rayz[0:,each],mask=mask, levels=levels,colors=colors, linewidths=linewidths)
-            contour = cs.collections[1].get_paths()
+#                refiner = tri.UniformTriRefiner(triang)
+#                tri_refi, z_refi = refiner.refine_field(rayz[0:,each], subdiv=0)
+            cs=plt.tricontour(triang,rayz[0:,each],mask=mask, levels=levels,colors='c', linewidths=[1.5])
+            contour = cs.collections[0].get_paths()
             for alls in range(len(contour)):
                 vs=contour[alls].vertices
                 a = Ut.PolygonArea(vs)
@@ -391,9 +395,20 @@ for days in range(ndays):
                             ltxlocalexist.append(0)
                         else:
                             ltxlocalexist.append(1)
+            #if it goes with a local- don't let it go with a double too
+            dupe=[]
             for dl in range(len(doubles)):
                 if localev.count(doubles[dl]) >0:
-                    doubles.pop(dl)   
+                    dupe.append(doubles[dl])
+            for repeats in range(len(dupe)):
+                doubles.remove(dupe[repeats])
+            #or if there are more locals LTX detections than ANF locals, fix it
+            pdist=[]
+            if len(localev) > len(localE):
+                for i in range(len(localev)-1):
+                    pdist.append(localev[i+1]-localev[i])
+                    junk=np.where(pdist==min(pdist))
+                localev.pop(junk[0][0]+1)
             detections = []
             detections = set(idx)#-set(doubles)
             detections = list(detections)
@@ -466,8 +481,8 @@ for days in range(ndays):
                 plt.suptitle('nearest station:'+stg+' '+str(ctimes[detections[fi]]))
                 for plots in range(5):
                     plt.subplot(5,1,plots+1)
-                    cf=recSTALTA(sss[plots][:], int(40), int(500))
-                    peaks = triggerOnset(cf, 5, .1)
+                    cf=recSTALTA(sss[plots][:], int(80), int(500))
+                    peaks = triggerOnset(cf, 3, .1)
                     peaksi=[]
                     dummy=0  
                     for peak in peaks:
@@ -520,8 +535,8 @@ for days in range(ndays):
                 df.S5time[fi] = (ptimes[4])
                 df.Confidence[fi]= confidence[0]
                 ptimes = []
-                svname=homedir+str(s)+"/image"+ss[11:13]+"_pick_"+str(fi+1)+".png"
-                plt.savefig(svname,format='png')
+                svname=homedir+str(s)+"/image"+ss[11:13]+"_pick_"+str(fi+1)+".eps"
+                plt.savefig(svname,format='eps')
                 plt.clf()
 
 #%%
@@ -603,9 +618,6 @@ for days in range(ndays):
         ax = plt.gca()
         fig.set_size_inches(18,14)
         #plot it all
-        for i in range(len(localE)):
-            plt.scatter(mdates.date2num(UTCDateTime(localE.time[i])),closesti[i],s=100,color='c', alpha=.8)
-         
         for i in range(len(detections)):
             
             if localev.count(detections[i]) ==1:
@@ -628,6 +640,8 @@ for days in range(ndays):
 #         
         for i in range(len(globalE)):
             plt.scatter(mdates.date2num(UTCDateTime(globalE.time[i])),0,s=100, color='b', alpha=.8)
+        for i in range(len(localE)):
+            plt.scatter(mdates.date2num(UTCDateTime(localE.time[i])),closesti[i],s=100,facecolor='c',edgecolor='grey')
         plt.imshow(np.flipud(rayz),extent = [mdates.date2num(tt), mdates.date2num(tt+nseconds+edgebuffer),  0, len(slist)],
                      aspect='auto',interpolation='nearest',cmap='bone',vmin=-30,vmax=110)
         ax.set_adjustable('box-forced')
@@ -639,55 +653,59 @@ for days in range(ndays):
         ax.grid(color='black')
         ss = str(tt)
         ss = ss[0:13]
-        kurs = "%s/"%s +"%s.png"%ss
+        kurs = "%s/"%s +"%s.eps"%ss
         svpath=homedir+kurs
-        plt.savefig(svpath, format='png')
+        plt.savefig(svpath, format='eps')
         
 #%%
-#tstr = []
-#for i in range(len(timevector)):
-#    tstr.append(str(timevector[i]))
-#fig = plt.figure()
-#import matplotlib
-#from matplotlib import animation
-#def animate(g):
-#    
-#    
-#    fig.clf()
-#    ax = plt.gca()
-#    fig.set_size_inches(18,14)
-#    m = Basemap(projection='cyl',llcrnrlat=min(ll),urcrnrlat=max(ll),llcrnrlon=min(lo),urcrnrlon=max(lo),resolution='c')
-#    #m = Basemap(projection='cyl',llcrnrlat=min(ll),urcrnrlat=max(ll),llcrnrlon=min(lo),urcrnrlon=max(lo),resolution='c')
-#    m.drawstates(color='grey')
-#    m.drawcoastlines(color='grey')
-#    m.drawcountries(color='grey')
-#
-#    for i, txt in enumerate(slist):
-#        ax.annotate(txt, (lo[i],ll[i]),color='lavender')
-#    #for i in range(len(ll)):
-#    #    plt.text(ll[i],lo[i],slist[i],color='white')
-#    for i in range(len(regionals)):
-#        plt.scatter(coordinatesz[0][regionals[i]],coordinatesz[1][regionals[i]],color='lavender',s=75, alpha=.75)
-#    for i in range(len(doubles)):
-#        plt.scatter(coordinatesz[0][localev[i]],coordinatesz[1][localev[i]],color='cyan',s=75, alpha=.75)
-#    plt.triplot(triang, lw=0.25, color='grey')
-#    ax.set_axis_bgcolor([.2, .2, .25])
-#    #ax.set_axis_bgcolor([1, 1, 1])
-#    #levels = [20,70,220,550,600]
-#    plt.tricontour(triang,rayz[0:,g],mask=mask,levels=levels,colors=colors,linewidths=linewidths)
-#    plt.tricontour(triang,rayz[0:,g-1],mask=mask,levels=levels,colors=colors,linewidths=linewidths)
-#    plt.tricontour(triang,rayz[0:,g-2],mask=mask,levels=levels,colors=colors,linewidths=linewidths)
-#    plt.tricontour(triang,rayz[0:,g-3],mask=mask,levels=levels,colors=colors,linewidths=linewidths)           
-#    plt.text(0,0, tstr[g],transform=ax.transAxes,color='grey',fontsize=16)
-#    fig.canvas.draw()
-#    
-#    
-#    
-#    
-#    
-#    
-#anim = animation.FuncAnimation(fig, animate,frames=len(sgram)-2, interval=1, blit=False)
-#anim.save('2009_11_12.mp4',codec='mpeg4', fps=30, bitrate=50000)
+#    tstr = []
+#    for i in range(len(timevector)):
+#        tstr.append(str(timevector[i]))
+#    fig = plt.figure()
+#    import matplotlib
+#    from matplotlib import animation
+#    p=1338
+#    tstr=tstr[p-10:p+80]
+#    temprayz=rayz[0:,p-10:p+80]
+#    def animate(g):
+#        
+#        
+#        fig.clf()
+#        ax = plt.gca()
+#        #fig.set_size_inches(18,14)
+#        m = Basemap(projection='cyl',llcrnrlat=min(ll),urcrnrlat=max(ll),llcrnrlon=min(lo),urcrnrlon=max(lo),resolution='c')
+#        #m = Basemap(projection='cyl',llcrnrlat=min(ll),urcrnrlat=max(ll),llcrnrlon=min(lo),urcrnrlon=max(lo),resolution='c')
+#        m.drawstates(color='grey')
+#        m.drawcoastlines(color='grey')
+#        m.drawcountries(color='grey')
+#        refiner = tri.UniformTriRefiner(triang)
+#        tri_refi, z_refi = refiner.refine_field(temprayz[0:,g], subdiv=3)
+#        for i, txt in enumerate(slist):
+#            ax.annotate(txt, (lo[i],ll[i]),color='lavender')
+#        #for i in range(len(ll)):
+#        #    plt.text(ll[i],lo[i],slist[i],color='white')
+#        for i in range(len(regionals)):
+#            plt.scatter(coordinatesz[0][regionals[i]],coordinatesz[1][regionals[i]],color='lavender',s=75, alpha=.75)
+#        for i in range(len(doubles)):
+#            plt.scatter(coordinatesz[0][localev[i]],coordinatesz[1][localev[i]],color='cyan',s=75, alpha=.75)
+#        plt.triplot(triang, lw=0.25, color='grey')
+#        ax.set_axis_bgcolor([.2, .2, .25])
+#        #ax.set_axis_bgcolor([1, 1, 1])
+#        #levels = [20,70,220,550,600]
+#        plt.tricontour(tri_refi,z_refi,mask=mask,levels=levels,colors=colors,linewidths=linewidths)
+#        #plt.tricontour(tri_refi,z_refi,mask=mask,levels=levels,colors=colors,linewidths=linewidths)
+#        #plt.tricontour(tri_refi,z_refi,mask=mask,levels=levels,colors=colors,linewidths=linewidths)
+#        #plt.tricontour(tri_refi,z_refi,mask=mask,levels=levels,colors=colors,linewidths=linewidths)           
+#        plt.text(0,0, tstr[g],transform=ax.transAxes,color='grey',fontsize=16)
+#        fig.canvas.draw()
+#        
+#        
+#        
+#        
+#        
+#        
+#    anim = animation.FuncAnimation(fig, animate,frames=len(tstr), interval=1, blit=False)
+#    #anim.save('2009_11_12.mp4',codec='mpeg4', fps=30, bitrate=50000)
 #%%
         blockette = blockette+(npts-nptsf)
         tt = tt+nseconds
@@ -699,8 +717,9 @@ for days in range(ndays):
                 
     #############################
     #if you need a station map
-    #if you need a station map
-    svpath2 = homedir+'basin%s/'%wb+"stationmap_basin%s"%wb+".png"    
+    df1=df1[df1.S1 != 'NA']
+    df1=df1.reset_index(drop=True)
+    svpath2 = homedir+'basin%s/'%wb+"stationmap_basin%s"%wb+".eps"    
     if not os.path.exists(svpath2):    
         plt.cla()
         ax = plt.gca()
@@ -711,7 +730,18 @@ for days in range(ndays):
         plt.scatter(lo,ll, color='grey')
         for i, txt in enumerate(slist):
             ax.annotate(txt, (lo[i],ll[i]))
-        plt.savefig(svpath2,format='png') 
+        for each in range(len(df1)):
+            if df1.Contributor[each]=='ANF,LTX':
+                color='c'
+            else:
+                color='white'
+            if df.Type[each] =='blast':
+                facecolor='none'
+            else: 
+                facecolor = color
+
+            plt.scatter(df1.Longitude[each],df1.Latitude[each],s=200,color=color,facecolor=facecolor)
+        plt.savefig(svpath2,format='eps') 
     
   
     svpath = homedir+'%s'%s+"/picktable.html"  
@@ -721,4 +751,9 @@ for days in range(ndays):
     dayat = dayat+1
     counter=counter+1
     counter_3char = str(counter).zfill(3)
+    
+
     #############################
+    
+#if __name__ == '__main__':
+#    SSA_figures()
