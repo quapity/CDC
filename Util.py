@@ -7,28 +7,187 @@ Utilities for LTX detections
 """
 import numpy as np
 import datetime
+from math import pi, cos, radians
+import geopy.distance as pydist
+from numpy import median, absolute
 
+
+#directy use derrick's ANF parser
+import pandas as pd
+import glob
+import os
+from obspy import UTCDateTime
+def readANF(anfdir,lon1=-180,lon2=180,lat1=0,lat2=90,getPhases=False,UTC1='1960-01-01',
+            UTC2='3000-01-01',Pcodes=['P','Pg'],Scodes=['S','Sg']):
+    """Function to read the ANF directories as downloaded from the ANF Earthscope Website"""
+    monthDirs=glob.glob(os.path.join(anfdir,'*'))
+    Eve=pd.DataFrame()
+    for month in monthDirs:
+        utc1=UTCDateTime(UTC1).timestamp
+        utc2=UTCDateTime(UTC2).timestamp
+        #read files for each month
+        
+        
+        dfOrigin=_readOrigin(glob.glob(os.path.join(month,'*.origin'))[0])
+        dfOrigerr=readOrigerr(glob.glob(os.path.join(month,'*.origerr'))[0])
+                #merge event files togther
+        DF=pd.merge(dfOrigin,dfOrigerr)
+            
+        #discard all events outside area of interest
+        DF=DF[(DF.Lat>lat1)&(DF.Lat<lat2)&(DF.Lon>lon1)&(DF.Lon<lon2)&(DF.time>utc1)&(DF.time<utc2)]
+        
+        if getPhases:
+            dfAssoc=_readAssoc(glob.glob(os.path.join(month,'*.assoc'))[0])
+            dfArrival=_readArrival(glob.glob(os.path.join(month,'*.arrival'))[0])
+ 
+            #link associated phases with files
+            DF=_linkPhases(DF,dfAssoc,dfArrival,Pcodes,Scodes)
+        
+        Eve=pd.concat([DF,Eve],ignore_index=True)
+        Eve.reset_index(drop=True,inplace=True)
+    return Eve
+
+def readOrigerr(origerrFile):
+    columnNames=['orid','sobs','smajax','sminax','strike','sdepth','conf']
+    columnSpecs=[(0,8),(169,179),(179,188),(189,198),(199,205),(206,215),(225,230)]
+    df=pd.read_fwf(origerrFile,colspecs=columnSpecs,header=None,names=columnNames)
+    return df
+
+def _readOrigin(originFile):
+    columnNames=['Lat','Lon','depth','time','orid','evid',
+     'jdate','nass','ndef','ndp','grn','srn','etype','review','depdp','dtype',
+     'mb','mbid','ms','msid','ml','mlid','algo','auth','commid','lddate']
+    columnSpecs=[(0,9),(10,20),(20,29),(30,47),(48,56),(57,65),(66,74),(75,79),(80,84),
+                (85,89),(90,98),(99,107),(108,110),(111,115),(116,125),(126,128),(128,136),
+                (136,144),(145,152),(153,161),(162,169),(170,178),(179,194),(195,210),
+                (211,219),(220,237)]
+    
+    df=pd.read_fwf(originFile,colspecs=columnSpecs,header=None,names=columnNames)
+    df['DateString']=[UTCDateTime(x).formatIRISWebService() for x in df.time]
+    return df
+    
+def _readAssoc(assocFile):
+    columnNames=['arid','orid','sta','phase','belief','delta']
+    columnSpecs=[(0,8),(9,17),(18,24),(25,33),(34,38),(39,47)]
+    df=pd.read_fwf(assocFile,colspecs=columnSpecs,header=None,names=columnNames)
+    return df
+
+def _readArrival(arrivalFile):
+    columnNames=['sta','time','arid','stassid','iphase','amp','per','snr']
+    columnSpecs=[(0,6),(7,24),(25,33),(43,51),(70,78),(136,146),(147,154),(168,178)]
+    df=pd.read_fwf(arrivalFile,colspecs=columnSpecs,header=None,names=columnNames)
+    return df
+    
+def _linkPhases(DF,dfAssoc,dfArrival,Pcodes,Scodes):
+    DF['Picks']=[{} for x in range(len(DF))]
+    for a in DF.iterrows():
+        dfas=dfAssoc[dfAssoc.orid==a[1].orid] #DF associated with orid, should be one row
+        dfas=dfas[dfas.phase.isin(Pcodes+Scodes)]
+        dfas['time']=float()
+        dfas['snr']=float
+        for b in dfas.iterrows(): #get times from df arrival
+            dfar=dfArrival[dfArrival.arid==b[1].arid]
+            dfas.time[b[0]]=dfar.time.iloc[0]
+            dfas.snr[b[0]]=dfar.snr.iloc[0]
+        for sta in list(set(dfas.sta.values)):
+            dfasSta=dfas[dfas.sta==sta]
+            dfasP=dfasSta[dfasSta.phase.isin(Pcodes)]
+            dfasS=dfasSta[dfasSta.phase.isin(Scodes)]
+            tempdict={sta:[0,0]}
+            if len(dfasP)>0:
+                tempdict[sta][0]=dfasP.time.iloc[0]
+            if len(dfasS)>0:
+                tempdict[sta][1]=dfasS.time.iloc[0]
+            DF.Picks[a[0]]=dict(DF.Picks[a[0]].items()+tempdict.items())
+    return DF
+    
+def ANFtoTemplateKey(anfDF,temKeyName='TemplateKey_anf.csv',saveTempKey=True):   
+    """Convert the dataframe created by the readANF function to a detex templatekey csv"""
+    ds=[x.split('.')[0].replace(':','-') for x in anfDF.DateString]
+    ts=[x.replace(':','-') for x in anfDF.DateString]
+    contrib=['ANF']*len(anfDF)
+    mtype=['ML']*len(anfDF)
+    stakey=['StationKey.csv']*len(anfDF)
+    df=pd.DataFrame()
+    df['CONTRIBUTOR'],df['NAME'],df['TIME'],df['LAT'],df['LON'],df['DEPTH'],df['MTYPE'],df['MAG'],df['STATIONKEY']=contrib,ds,ts,anfDF.Lat.tolist(),anfDF.Lon.tolist(),anfDF.depth.tolist(),mtype,anfDF.ml.tolist(),stakey
+    if saveTempKey:
+        df.to_csv(temKeyName)
+    return df
+#**********************************
+    
+##test functions for blast templates
+#util.inventory2StationKey(inv,tt,tt2,fileName='StationKey.csv')
+#inv = client.get_stations(station='*',network='TA',location='*',channel='BHZ',
+#     minlatitude=blastsites[0][1]-.5,maxlatitude=blastsites[0][0]+.5,minlongitude=blastsites[0][2]-.8,
+#     maxlongitude=blastsites[0][3]+.8,level='channel')
+def mad(data, axis=None):
+    '''use numpy to calculate median absolute deviation (MAD), more robust than std'''
+    return median(absolute(data - median(data, axis)), axis)
+
+def get_levels(rays):
+    a,b = np.shape(rays)
+    temp = np.reshape(rays, [1,a*b])
+    return mad(temp)*4
+    
+def get_saturation_value(rays):
+    a,b = np.shape(rays)
+    temp = np.reshape(rays, [1,a*b])
+    return mad(temp)*6
 ##functions for computing polygon area and running mean etc
+#def PolygonArea(corners):
+#    """Returns the x & y coordinates in meters using a sinusoidal projection"""
+#    from math import pi, cos, radians
+#    earth_radius = 6371009 # in meters
+#    lat_dist = pi * earth_radius / 180.0
+#    x=corners[:,0]
+#    y=corners[:,1]
+#    yg = [lat * lat_dist for lat in y]
+#    xg = [lon * lat_dist * cos(radians(lat)) for lat, lon in zip(x, y)]
+#    corners=[yg,xg]
+#    n = len(corners) # of corners
+#    area = 0.0
+#    for i in range(n):
+#        j = (i + 1) % n
+#        area += corners[i][0] * corners[j][1]
+#        area -= corners[j][0] * corners[i][1]
+#    area = abs(area) / 2.0
+#    return area
 def PolygonArea(corners):
-    n = len(corners) # of corners
+    earth_radius = 6371009 # in meters
+    lat_dist = pi * earth_radius / 180.0
+    x=corners[:,0]
+    y=corners[:,1]
+    yg = [lat * lat_dist for lat in y]
+    xg = [lon * lat_dist * cos(radians(lat)) for lat, lon in zip(y,x)]
+    corners=[yg,xg]
     area = 0.0
-    for i in range(n):
-        j = (i + 1) % n
-        area += corners[i][0] * corners[j][1]
-        area -= corners[j][0] * corners[i][1]
-    area = abs(area) / 2.0
-    return area
+    for i in xrange(-1, len(xg)-1):
+        area += xg[i] * (yg[i+1] - yg[i-1])
+    return abs(area) / 2.0
  
 def runningmean(x, N):
     return np.convolve(x, np.ones((N,))/N)[(N-1):]
+    
+#def get_k(x,y,triangles,ratio):
+#    out = []
+#    for points in triangles:
+#        a,b,c = points
+#        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
+#        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
+#        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
+#        s=d0+d1+d2/2
+#        arear=np.sqrt(s*(s-d0)*(s-d1)*(s-d2))
+#        out.append(arear)
+#    k_value=np.min(out)*ratio
+#    return k_value
     
 def get_k(x,y,triangles,ratio):
     out = []
     for points in triangles:
         a,b,c = points
-        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
-        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
-        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
+        d0 = pydist.vincenty([x[a],y[a]],[x[b],y[b]]).meters
+        d1 = pydist.vincenty([x[b],y[b]],[x[c],y[c]]).meters
+        d2 = pydist.vincenty([x[c],y[c]],[x[a],y[a]]).meters
         s=d0+d1+d2/2
         arear=np.sqrt(s*(s-d0)*(s-d1)*(s-d2))
         out.append(arear)
@@ -39,11 +198,14 @@ def get_edge_ratio(x,y,triangles,ratio):
     out = []
     for points in triangles:
         a,b,c = points
-        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
+        d0 = pydist.vincenty([x[a],y[a]],[x[b],y[b]]).meters
+        #d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
         out.append(d0)
-        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
+        d1 = pydist.vincenty([x[b],y[b]],[x[c],y[c]]).meters
+        #d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
         out.append(d1)
-        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
+        d2 = pydist.vincenty([x[c],y[c]],[x[a],y[a]]).meters
+        #d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
         out.append(d2)
     mask_length=np.median(out)*ratio
     median_edge=np.median(out)
@@ -55,9 +217,12 @@ def long_edges(x, y, triangles, ratio=2.5):
     for points in triangles:
         #print points
         a,b,c = points
-        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
-        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
-        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
+        d0 = pydist.vincenty([x[a],y[a]],[x[b],y[b]]).meters
+        d1 = pydist.vincenty([x[b],y[b]],[x[c],y[c]]).meters
+        d2 = pydist.vincenty([x[c],y[c]],[x[a],y[a]]).meters
+#        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
+#        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
+#        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
         max_edge = max([d0, d1, d2])
         #print points, max_edge
         if max_edge > olen:
@@ -66,12 +231,12 @@ def long_edges(x, y, triangles, ratio=2.5):
             out.append(False)
     return out,edgeL
 
-def templatetimes(detectiontime):
-    vec = detectiontime-datetime.timedelta(seconds = 120)
+def templatetimes(detectiontime,tlength,delta):
+    vec = detectiontime-datetime.timedelta(seconds = tlength/delta)
     #end = tr.stats.endtime
-    step = datetime.timedelta(seconds=.025)
+    step = datetime.timedelta(seconds=1.0/delta)
     out = []
-    while len(out)<9600:
+    while len(out)<tlength*2:
         out.append(vec)
         vec += step
     return out 
@@ -88,36 +253,36 @@ def gettvals(tr):
     return out
     
 def getfvals(tt,sgram,nseconds,edgebuffer):
-    vec = datetime.datetime.strptime(str(tt), '%Y-%m-%dT%H:%M:%S.%fZ')
+    vec = tt.datetime
     ed = tt+(nseconds+edgebuffer)
-    end = datetime.datetime.strptime(str(ed), '%Y-%m-%dT%H:%M:%S.%fZ')
     step = datetime.timedelta(seconds=((nseconds+edgebuffer)/float(len(sgram))))
     out = []
-    while vec <= end:
+    while vec <= ed.datetime:
         out.append(vec)
         vec += step
     return out
     
 #clean up the array at saturation value just below the detection threshold
 def saturateArray(array):
-    """fix this so the values aren't hard coded"""
+    """saturate array at 6*MAD """
+    shigh = get_saturation_value(array)
+    sloww = shigh*-1
     junk=[]    
     for i in range(np.shape(array)[0]):
         fill = np.sum(array,axis=1)
-    if np.sum(array[i][:]) >= 1.5*np.std(fill):
+    if np.sum(array[i][:]) >= 2.5*mad(fill):
         array[i][:]= np.median(array)        
-    junk = np.where(array>=30)
-    array[junk]=30
-    junk = np.where(array<=-40)
-    array[junk]=-40
+    junk = np.where(array>=shigh)
+    array[junk]=shigh
+    junk = np.where(array<=sloww)
+    array[junk]=sloww
     return array
     
 ##get catalog data (ANF right now only)
 def getCatalogData(tt,nseconds,lo,ll):
-    from detex import ANF
     import geopy.distance as pydist
-    localE= ANF.readANF('anfdir',UTC1=tt,UTC2=tt+nseconds, lon1=min(lo),lon2=max(lo),lat1=min(ll),lat2=max(ll))
-    globalE= ANF.readANF('anfdir',UTC1=tt,UTC2=tt+nseconds)
+    localE= readANF('anfdir',UTC1=tt,UTC2=tt+nseconds, lon1=min(lo),lon2=max(lo),lat1=min(ll),lat2=max(ll))
+    globalE= readANF('anfdir',UTC1=tt,UTC2=tt+nseconds)
     #fix for issue 011: remove events from global that overlap with local
     dg = globalE
     for i in range(len(localE)):
@@ -127,7 +292,7 @@ def getCatalogData(tt,nseconds,lo,ll):
     distarray,closesti=[],[]
     for event in range(len(localE)):
         for each in range(len(ll)):
-            distarray.append(pydist.vincenty([localE.Lat[event],localE.Lon[event]],[ll[each],lo[each]]))
+            distarray.append(pydist.vincenty([localE.Lat[event],localE.Lon[event]],[ll[each],lo[each]]).meters)
         closesti.append(np.argmin(distarray))
         distarray = []
     return localE,globalE,closesti
@@ -144,9 +309,13 @@ def bestCentroid(detections,localev,centroids,localE,ctimes):
     for each in range(len(detections)):
         
         if localev.count(detections[each]) >0:
-            localEi=bisect.bisect_left(atimes, (ctimes[detections[each]])) 
-            centroid[each][0]=localE.Lat[localEi-1]
-            centroid[each][1]=localE.Lon[localEi-1]
+            localEi=bisect.bisect_left(atimes, (ctimes[detections[each]]))
+            if localEi == 0:
+                centroid[each][0]=localE.Lat[localEi]
+                centroid[each][1]=localE.Lon[localEi]
+            else:
+                centroid[each][0]=localE.Lat[localEi-1]
+                centroid[each][1]=localE.Lon[localEi-1]
         else:
             centroid[each][0]=centroids[detections[each]][1]
             centroid[each][1]=centroids[detections[each]][0]
