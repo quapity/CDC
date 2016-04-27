@@ -47,13 +47,8 @@ import geopy.distance as pydist
 #############################
 
 yr = '2009'
-<<<<<<< HEAD
-mo = '05'
-dy = '31'
-=======
-mo = '03'
+mo = '11'
 dy = '01'
->>>>>>> 3d0221938984a7829dbeb09de285c04b8366205e
 hr = '00'
 mn = '00'
 sc = '00'
@@ -65,11 +60,7 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-<<<<<<< HEAD
-ndays= 2 #however many days you want to generate images for
-=======
-ndays= 31 #however many days you want to generate images for
->>>>>>> 3d0221938984a7829dbeb09de285c04b8366205e
+ndays= 61 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 1.5
@@ -741,11 +732,7 @@ for days in range(ndays):
                 color='c'
             else:
                 color='white'
-<<<<<<< HEAD
             if df1.Type[each] =='blast':
-=======
-            if df.Type[each] =='blast':
->>>>>>> 3d0221938984a7829dbeb09de285c04b8366205e
                 facecolor='none'
             else: 
                 facecolor = color
