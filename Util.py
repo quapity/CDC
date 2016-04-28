@@ -9,7 +9,6 @@ import numpy as np
 import datetime
 from math import pi, cos, radians
 import geopy.distance as pydist
-<<<<<<< HEAD
 from numpy import median, absolute
 
 
@@ -18,6 +17,7 @@ import pandas as pd
 import glob
 import os
 from obspy import UTCDateTime
+
 def readANF(anfdir,lon1=-180,lon2=180,lat1=0,lat2=90,getPhases=False,UTC1='1960-01-01',
             UTC2='3000-01-01',Pcodes=['P','Pg'],Scodes=['S','Sg']):
     """Function to read the ANF directories as downloaded from the ANF Earthscope Website"""
@@ -121,11 +121,6 @@ def ANFtoTemplateKey(anfDF,temKeyName='TemplateKey_anf.csv',saveTempKey=True):
 #inv = client.get_stations(station='*',network='TA',location='*',channel='BHZ',
 #     minlatitude=blastsites[0][1]-.5,maxlatitude=blastsites[0][0]+.5,minlongitude=blastsites[0][2]-.8,
 #     maxlongitude=blastsites[0][3]+.8,level='channel')
-=======
-
-from numpy import median, absolute
-
->>>>>>> 3d0221938984a7829dbeb09de285c04b8366205e
 def mad(data, axis=None):
     '''use numpy to calculate median absolute deviation (MAD), more robust than std'''
     return median(absolute(data - median(data, axis)), axis)
