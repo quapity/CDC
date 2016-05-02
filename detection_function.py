@@ -6,7 +6,8 @@ Created on Wed Jan  6 12:08:15 2016
 @authors: linville.seis.utah.edu; dkilb@ucsd.edu
 
 Scipt to generate array images in specified year_day directories.
-From: Linville, L., K. Pankow, D. Kilb, and A. Velasco (2014), doi:10.1002/2014JB011529.
+From: Linville, L., K. Pankow, D. Kilb, and A. Velasco (2014), 
+doi:10.1002/2014JB011529.
 
 Parameters
 ------------------
@@ -17,7 +18,7 @@ levels: which contours to generate and base detections off
 
 """
 #from __future__ import print_function
-def detect(yr,mo,dy,hr=00,mn=00,sec=00,homedir=''):
+def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
     
     """
     Created on Wed Jan  6 12:08:15 2016
@@ -25,13 +26,17 @@ def detect(yr,mo,dy,hr=00,mn=00,sec=00,homedir=''):
     @authors: linville.seis.utah.edu; dkilb@ucsd.edu
     
     Scipt to generate array images in specified year_day directories.
-    From: Linville, L., K. Pankow, D. Kilb, and A. Velasco (2014), doi:10.1002/2014JB011529.
+    From: Linville, L., K. Pankow, D. Kilb, and A. Velasco (2014), 
+    doi:10.1002/2014JB011529.
     
     Parameters
     ------------------
     wb : int, which basin number to import station/blast site lists from
+    
     ndays: int, how many days to process, in 2 hour blocks
-    thresholdv: float, scalar, what value above the avg area based on station space
+    
+    thresholdv: float, what value above the avg area based on station space
+    
     levels: which contours to generate and base detections off
     
     """
@@ -57,29 +62,26 @@ def detect(yr,mo,dy,hr=00,mn=00,sec=00,homedir=''):
     from obspy.taup import TauPyModel as TauP
     model = TauP(model="iasp91")
     from obspy.core.util import locations2degrees as loc2d
-    homedir =''
+    #homedir =''
     #homedir = '/Users/dkilb/Desktop/DebDocuments/Projects/Current/ES_minions/LDK/'
     import sys
     sys.path.append(homedir)
     import Util as Ut
     import geopy.distance as pydist
     #############################
-    
-    yr = '2009'
-    mo = '09'
-    dy = '08'
-    hr = '00'
-    mn = '00'
-    sc = '00'
-    
+
+    if duration == 86400:
+        im = 12
+    elif duration == 7200:
+        im=1
     
     wb = 1 #which basin # are we working on for station list import
     maketemplates = 1
     tlength = 4800 #nsamples on either side of detection time for template
     counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
     edgebuffer = 60
-    duration = 7200 +edgebuffer
-    ndays= 1 #however many days you want to generate images for
+    #duration = 7200 +edgebuffer
+    #ndays= 1 #however many days you want to generate images for
     dayat = int(dy)
     #set parameter values; k = area threshold for detections:
     thresholdv= 1.5
@@ -171,7 +173,7 @@ def detect(yr,mo,dy,hr=00,mn=00,sec=00,homedir=''):
             newlon[i]=longitudes[reindex]
             distances.append(pydist.vincenty([newlat[i],newlon[i]],[latmin,lonmin]).meters)
         #####this is where maths happends and arrays are created
-        for block in range(1):
+        for block in range(im):
             ll,lo,stalist,vizray,dist=[],[],[],[],[]
             shorty = 0
             for z in range(len(snames)):
