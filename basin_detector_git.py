@@ -38,7 +38,7 @@ from mpl_toolkits.basemap import Basemap
 from obspy.taup import TauPyModel as TauP
 model = TauP(model="iasp91")
 from obspy.core.util import locations2degrees as loc2d
-homedir ='/home/linville/Documents/presentations/posters/SSA2016/'
+homedir =''
 #homedir = '/Users/dkilb/Desktop/DebDocuments/Projects/Current/ES_minions/LDK/'
 import sys
 sys.path.append(homedir)
@@ -47,8 +47,8 @@ import geopy.distance as pydist
 #############################
 
 yr = '2009'
-mo = '11'
-dy = '01'
+mo = '09'
+dy = '08'
 hr = '00'
 mn = '00'
 sc = '00'
@@ -60,7 +60,7 @@ tlength = 4800 #nsamples on either side of detection time for template
 counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
 edgebuffer = 60
 duration = 86400 +edgebuffer
-ndays= 61 #however many days you want to generate images for
+ndays= 1 #however many days you want to generate images for
 dayat = int(dy)
 #set parameter values; k = area threshold for detections:
 thresholdv= 1.5
@@ -126,7 +126,7 @@ for days in range(ndays):
 #    d = {'Station': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'NPTS': 'NA','Delta': 'NA'}
 #    index = snames;metaframe = pd.DataFrame(data=d, index=index)
     
-    alltimes=Ut.gettvals(sz[0])
+    alltimes=Ut.gettvals(sz[0],sz[1],sz[2])
     #############################
     #########################
     #%%
@@ -411,7 +411,7 @@ for days in range(ndays):
             detections = list(detections)
             detections.sort()
             idx = detections
-            dtype = Ut.markType(detections,blastsites,centroids,localev,localE,ctimes)
+            dtype = Ut.markType(detections,blastsites,centroids,localev,localE,ctimes,doubles)
             #get the nearest station also for cataloged events
             closestd = np.zeros([len(doubles)])
             distarray = np.zeros([len(ll)])
@@ -475,7 +475,7 @@ for days in range(ndays):
                 sss=np.nan_to_num(sss)
                 stg=slist[closestl[0][0]]    
                 #plt.figure(fi)
-                plt.suptitle('nearest station:'+stg+' '+str(ctimes[detections[fi]]))
+                plt.suptitle('nearest station:'+stg+' '+str(ctimes[detections[fi]])+'TYPE = '+dtype[fi])
                 for plots in range(5):
                     plt.subplot(5,1,plots+1)
                     cf=recSTALTA(sss[plots][:], int(80), int(500))
@@ -532,8 +532,9 @@ for days in range(ndays):
                 df.S5time[fi] = (ptimes[4])
                 df.Confidence[fi]= confidence[0]
                 ptimes = []
-                svname=homedir+str(s)+"/image"+ss[11:13]+"_pick_"+str(fi+1)+".eps"
-                plt.savefig(svname,format='eps')
+                if dtype[fi]=='earthquake':
+                    svname=homedir+str(s)+"/image"+ss[11:13]+"_pick_"+str(fi+1)+".eps"
+                    plt.savefig(svname,format='eps')
                 plt.clf()
 
 #%%
