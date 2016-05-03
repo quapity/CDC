@@ -242,7 +242,14 @@ def templatetimes(detectiontime,tlength,delta):
         vec += step
     return out 
     
-def gettvals(tr):
+def gettvals(tr1,tr2,tr3):
+    mlen= max(len(tr1),len(tr2),len(tr3))
+    if len(tr1)==mlen:
+        tr=tr1
+    elif len(tr2)==mlen:
+        tr=tr2
+    else:
+        tr=tr3
     vec = tr.stats.starttime
     vec=vec.datetime
     #end = tr.stats.endtime
@@ -324,7 +331,7 @@ def bestCentroid(detections,localev,centroids,localE,ctimes):
     return centroid
 
    
-def markType(detections,blastsites,centroids,localev,localE,ctimes):
+def markType(detections,blastsites,centroids,localev,localE,ctimes,doubles):
     cents= bestCentroid(detections,localev,centroids,localE,ctimes)    
     temp = np.empty([len(detections),len(blastsites)])
     dtype = []
@@ -339,6 +346,9 @@ def markType(detections,blastsites,centroids,localev,localE,ctimes):
             dtype.append('blast')
         else:
             dtype.append('earthquake')
+        for et in doubles:
+            if et == detections[event]:
+                dtype[event]='regional'
     return dtype
     
     
