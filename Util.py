@@ -349,7 +349,7 @@ def markType(detections,blastsites,centroids,localev,localE,ctimes,doubles):
         for et in doubles:
             if et == detections[event]:
                 dtype[event]='regional'
-    return dtype
+    return dtype,cents
     
     
 ### get station lists for specific basin    
