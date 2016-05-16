@@ -1,5 +1,5 @@
-    # -*- coding: utf-8 -*-
-    
+# -*- coding: utf-8 -*-
+
 """
 Created on Wed Jan  6 12:08:15 2016
 
@@ -12,13 +12,16 @@ doi:10.1002/2014JB011529.
 Parameters
 ------------------
 wb : int, which basin number to import station/blast site lists from
+
 ndays: int, how many days to process, in 2 hour blocks
-thresholdv: float, scalar, what value above the avg area based on station space
+
+thresholdv: float, what value above the avg area based on station space
+
 levels: which contours to generate and base detections off
 
 """
-#from __future__ import print_function
-def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
+def detect(yr='2009',mo='01',dy='20',hr='20',mn='00',sc='00',homedir='',
+           duration=7200,ndays=1):
     
     """
     Created on Wed Jan  6 12:08:15 2016
@@ -40,8 +43,6 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
     levels: which contours to generate and base detections off
     
     """
-    
-     
     #control plot behavior
     
     import matplotlib.pylab as plt
@@ -55,32 +56,25 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
     import numpy as np
     import matplotlib.dates as mdates 
     import matplotlib.tri as tri
-    from obspy.signal.trigger import recSTALTA, triggerOnset
+    #from obspy.signal.trigger import recSTALTA, triggerOnset
+    from obspy.signal.trigger import recursive_sta_lta as recSTALTA
+    from obspy.signal.trigger import trigger_onset as triggerOnset
     import copy,os,bisect,scipy,datetime,itertools
     import pandas as pd
     from mpl_toolkits.basemap import Basemap
     from obspy.taup import TauPyModel as TauP
     model = TauP(model="iasp91")
-    from obspy.core.util import locations2degrees as loc2d
-    #homedir =''
-    #homedir = '/Users/dkilb/Desktop/DebDocuments/Projects/Current/ES_minions/LDK/'
-    import sys
-    sys.path.append(homedir)
+    from obspy.geodetics import locations2degrees as loc2d
     import Util as Ut
     import geopy.distance as pydist
     #############################
 
-    if duration == 86400:
-        im = 12
-    elif duration == 7200:
-        im=1
-    
     wb = 1 #which basin # are we working on for station list import
     maketemplates = 1
     tlength = 4800 #nsamples on either side of detection time for template
     counter = datetime.date(int(yr),int(mo),int(dy)).timetuple().tm_yday
     edgebuffer = 60
-    #duration = 7200 +edgebuffer
+    duration = duration +edgebuffer
     #ndays= 1 #however many days you want to generate images for
     dayat = int(dy)
     #set parameter values; k = area threshold for detections:
@@ -94,18 +88,16 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
     w = scipy.hanning(fftsize+1)[:-1] 
     delta=40.0
     
-    #linewidths=[.5,1.5,1.5, 0.5, 0.6, .6, 0.6,.5,.5]
-    
-     
-    
-    #read in the station list from stalist.pkl    
-    #f = open('stalist.pkl')
-    #bulk = pickle.load(f)
-    #f.close()
-    
+    if duration == 86460:
+        im = 12
+    elif duration == 7260:
+        im=1
+    else:
+        print('im not set')
+
     #parse the datetime
     counter_3char = str(counter).zfill(3)
-    datest = yr+str('-')+mo+str('-')+str(dayat)+str('T')+hr+str(':')+mn+str('.')+sc 
+    datest =yr+str('-')+mo+str('-')+str(dayat)+str('T')+hr+str(':')+mn+str('.')+sc 
     tt = UTCDateTime(datest)
     
     #####################################################################
@@ -125,7 +117,7 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
         for i in range(len(sz)):
             if sz[i].stats.sampling_rate != delta:
                 sz[i].resample(delta)
-                print("Reset Sample rate for station: ",sz[i].stats.station)     
+                #print("Reset Sample rate for station: ",sz[i].stats.station)     
         
         sz.merge(fill_value=0)
         sz.detrend()
@@ -153,8 +145,11 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
         #%%
         nptsf = edgebuffer*deltaf
         blockette = 0
-        d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'S1': 'NA','S1time': 'NA', 'Magnitude': -999.00, 'Confidence': 0,'S2':'NA','S3':'NA',
-            'S4': 'NA', 'S5': 'NA','S2time': 'NA','S3time': 'NA','S4time': 'NA','S5time': 'NA','Type': 'Event'}
+        d = {'Contributor': 'NA', 'Latitude': 'NA','Longitude': 'NA', 'S1': 'NA',
+             'S1time': 'NA', 'Magnitude': -999.00, 'mag_error': -999.00,'cent_er': -999.00,
+             'Confidence': 0,'S2':'NA','S3':'NA','S4': 'NA', 'S5': 'NA',
+             'S2time': 'NA','S3time': 'NA','S4time': 'NA','S5time': 'NA',
+             'Type': 'Event'}
         index = [0]; df1 = pd.DataFrame(data=d, index=index)   
         stations,latitudes,longitudes,distances=[],[],[],[]
         for i in range(len(inv.networks)):
@@ -300,6 +295,7 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
             ltxglobal=[]
             ltxglobalexist=[]
             doubles,localev = [],[]
+            dit2=[]
     #%%           
     #if there are no picks but cataloged events exist, make null arrays           
             if len(idx) == 0 and len(globalE) >0:
@@ -396,7 +392,7 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
                             dep = localE.depth[eachlocal]
                             dit = loc2d(centroids[idx[i]][1],centroids[idx[i]][0], localE.Lat[eachlocal],localE.Lon[eachlocal])
                             junk= UTCDateTime(alltimes[timeindex]) - UTCDateTime(localE.DateString[eachlocal])
-                            if junk > -60 and junk < 60 and dit <3.5*edgeL:
+                            if junk > -60 and junk < 60 and dit <2.5*edgeL:
                                 localev.append(idx[i])
                                 ltxlocal.append(UTCDateTime(alltimes[timeindex-tlength+peaks[0][0]]))
                                 ltxlocalexist.append(0)
@@ -407,7 +403,7 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
                             dep = localE.depth[eachlocal]
                             dit = loc2d(centroids[idx[i]][1],centroids[idx[i]][0], localE.Lat[eachlocal],localE.Lon[eachlocal])
                             junk= UTCDateTime(alltimes[timeindex]) - UTCDateTime(localE.DateString[eachlocal])
-                            if junk > -60 and junk < 60 and dit <3.5*edgeL:
+                            if junk > -60 and junk < 60 and dit <2.5*edgeL:
                                 localev.append(idx[i])
                                 ltxlocal.append(UTCDateTime(alltimes[timeindex]))
                                 ltxlocalexist.append(0)
@@ -432,7 +428,7 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
                 detections = list(detections)
                 detections.sort()
                 idx = detections
-                dtype = Ut.markType(detections,blastsites,centroids,localev,localE,ctimes,doubles)
+                dtype,cents = Ut.markType(detections,blastsites,centroids,localev,localE,ctimes,doubles)
                 #get the nearest station also for cataloged events
                 closestd = np.zeros([len(doubles)])
                 distarray = np.zeros([len(ll)])
@@ -477,8 +473,10 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
                         allmags = [localE.ms[dum],localE.mb[dum],localE.ml[dum]]
                         df.Magnitude[fi]=np.max(allmags)
                         dum = dum+1
-                    df.Latitude[fi] = coordinatesz[1][detections[fi]]
-                    df.Longitude[fi]=coordinatesz[0][detections[fi]]
+                    #df.Latitude[fi] = coordinatesz[1][detections[fi]]
+                    #df.Longitude[fi]=coordinatesz[0][detections[fi]]
+                    df.Latitude[fi] = cents[fi][0]
+                    df.Longitude[fi]=cents[fi][1]
                     df.Type[fi] = dtype[fi]
                     plt.cla()
                     ax = plt.gca()
@@ -533,11 +531,16 @@ def detect(yr=2009,mo=9,dy=8,hr=0,mn=0,sc=0,homedir='',duration=7200,ndays=1):
                         else:
                             ptimes.append(UTCDateTime(alltimes[timeindex]))
                             confidence.append(2)
+                    
+    
                     magi= np.round(magi,decimals=2)
                     magii = pd.DataFrame(magi)
                     magu= magii[magii != 0]
                     if df.Contributor[fi]=='ANF,LTX':
+                        df.mag_error[fi]= np.round(np.max(allmags)-np.mean(magu,axis=1)[fi],decimals=2)                    
                         df.Magnitude[fi]=str(str(df.Magnitude[fi])+','+str(np.round(np.mean(magu,axis=1)[fi],decimals=2)))
+                        df.cent_er[fi] = np.round(pydist.vincenty([coordinatesz[1][detections[fi]],
+                            coordinatesz[0][detections[fi]]],[cents[fi][0],cents[fi][1]]).meters/1000.00,decimals=2)
                     else:
                         df.Magnitude[fi]=np.round(np.mean(magu,axis=1)[fi],decimals=2)
                     #ptimes = np.reshape(ptimes,[len(ptimes)/5,5])       
