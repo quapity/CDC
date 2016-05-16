@@ -6,7 +6,7 @@ LDK: A seismic array detection algorithm
 
 - [Intro](#intro)
 - [Dependencies](#installation)
-    - [Pandas](#Notes)
+    - [Notes](#Notes)
     - [Dependencies](#Dependencies)
     
 - [Quick Feature Summary](#quick-feature-summary)
@@ -34,20 +34,20 @@ Installation
 ------------
 
 ### Notes
--tested on Python 2.7
--recommend to run in seperate env if other seimic processing relies on older obspy (<0.9.x)
+* tested on Python 2.7
+* recommend to run in seperate env if other seimic processing relies on older obspy (<0.9.x)
     With Anaconda you can use environments with diff packages,versions etc.
     Docs on managing environments here: http://conda.pydata.org/docs/using/envs.html 
 
 ### Dependencies
--Relies on Numpy,Scipy,Pandas,and Geopy. Most can be installed with pip or ship with Anaconda
--Seismic data access and routines from obspy
--http://pandas.pydata.org/
--http://www.scipy.org/
--https://github.com/geopy/geopy
--pandas.pydata.org
--https://github.com/obspy/obspy/wiki
--ANF catalog import stolen from old version of detex, a python code for subspace detection
+* Relies on Numpy,Scipy,Pandas,and Geopy. Most can be installed with pip or ship with Anaconda
+* Seismic data access and routines from obspy
+* http://pandas.pydata.org/
+* http://www.scipy.org/
+* https://github.com/geopy/geopy
+* pandas.pydata.org
+* https://github.com/obspy/obspy/wiki
+* ANF catalog import stolen from old version of detex, a python code for subspace detection
     Check it out at https://github.com/dchambers/detex.git 
     or to install git+git://github.com/d-chambers/detex
 
@@ -55,10 +55,11 @@ Installation
 Quick Feature Summary
 -----
 
-### General (all languages)
+### General
 
 * Uses coherent energy in broadband, low amplitude ranges to identify seismic events across an array
-* Output is a pick table of detections, and templates for each detection -organized in day directories
+* Input is local seismic data OR date range and station list for  obspy fetched waveform data
+* Output is a picktable (as a dataframe), and templates for each detection -organized in day directories
 * Current support for ANF catalog 
 
 
@@ -67,8 +68,12 @@ User Guide
 
 ### General Usage
 
-- Currently, the target directory is hardcoded and needs to point somewhere appropriate
-- for ANF catalog filtering 
+* LDK.detection_function.detect('YYYY','MM','DD','HH','MM','SS',duration=7200,ndays=1,wb=1)
+
+The first 6 args are start date/time. These pipe to obspy UTCDatetime
+duration: number of seconds (2 hours is the smallest allowable increment)
+ndays:    number of days to process from start date/time
+wb:       the station list to use. Referenced from lists in the last half of Util.py
 
 ### Basic Tutorial
 
