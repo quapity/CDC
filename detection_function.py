@@ -20,7 +20,7 @@ thresholdv: float, what value above the avg area based on station space
 levels: which contours to generate and base detections off
 
 """
-def detect(yr='2009',mo='01',dy='20',hr='20',mn='00',sc='00',homedir='',
+def detect(yr='2009',mo='06',dy='17',hr='10',mn='00',sc='00',homedir='',
            duration=7200,ndays=1):
     
     """
