@@ -6,54 +6,50 @@ LDK: A seismic array detection algorithm
 
 - [Intro](#intro)
 - [Dependencies](#installation)
-    - [Pandas](#PANDAS)
-    - [Scipy](#SCIPY)
-    - [Numpy](#NUMPY)
-    - [DETEX](#DETEX)
+    - [Pandas](#Notes)
+    - [Dependencies](#Dependencies)
     
 - [Quick Feature Summary](#quick-feature-summary)
 - [User Guide](#user-guide)
     - [General Usage](#general-usage)
-    
-- [GIT basics](#git)
-
+    - [Basic Tutorial](#basic-tutorial)
 
 Intro
 -----
 
-text here
+Seismic detection code for processing seismic data from arrays with a large number of stations
+(the advantage over STA/LTA increases with the number of stations). This code was built for processing
+Transportable Array data, and has been tested on dense temporary arrays, where in both cases station
+spacing is somewhat consistent. This is not an appropriate method for T or L-shaped arrays with few 
+stations because it is fundamentally a spatial coherence filter implemented in the frequency domain.
 
+The main advantage over other network style processing is that 1) No earth model is required,
+2) The number of false detections when tuned for detection of small magnitude events (M<2.5)
+still leaves the user with a tractable number of detections to manually review 3) Performs better 
+in high-noise environments and 4) There is no requirement that sources are earthquake like 
+(i.e. that they are impulsive, high amplitude relative to minute-length background, etc..)  
 
 
 Installation
 ------------
 
-### PANDAS
+### Notes
+-tested on Python 2.7
+-recommend to run in seperate env if other seimic processing relies on older obspy (<0.9.x)
+    With Anaconda you can use environments with diff packages,versions etc.
+    Docs on managing environments here: http://conda.pydata.org/docs/using/envs.html 
 
-http://pandas.pydata.org/
-
-    pip install pandas
-
-
-
-### SCIPY
-
-http://www.scipy.org/
-
-
-    pip install scipy
-
-### NUMPY
-
-
-    pip install numpy
-
-### DETEX
-
-https://github.com/dchambers/detex.git
-To install with pip:
-
-pip install git+git://github.come/d-chambers/detex
+### Dependencies
+-Relies on Numpy,Scipy,Pandas,and Geopy. Most can be installed with pip or ship with Anaconda
+-Seismic data access and routines from obspy
+-http://pandas.pydata.org/
+-http://www.scipy.org/
+-https://github.com/geopy/geopy
+-pandas.pydata.org
+-https://github.com/obspy/obspy/wiki
+-ANF catalog import stolen from old version of detex, a python code for subspace detection
+    Check it out at https://github.com/dchambers/detex.git 
+    or to install git+git://github.com/d-chambers/detex
 
 
 Quick Feature Summary
@@ -74,10 +70,5 @@ User Guide
 - Currently, the target directory is hardcoded and needs to point somewhere appropriate
 - for ANF catalog filtering 
 
-GIT Basics
-----------
+### Basic Tutorial
 
-Make sure Git is set up locally: https://help.github.com/articles/set-up-git/
-
-- To pull the latest version from GIT the first time, clone the LDK repository (password protected)
-git clone https://github.com/quapity/LDK.git
