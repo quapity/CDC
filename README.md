@@ -1,20 +1,22 @@
 LDK: A seismic array detection algorithm
 ===============================================
+</p>
 
-[Project Website](http://dkilb8.wix.com/earthscope)
+<p align="center">
+<b><a href="#overview">Overview</a></b>
+|
+<b><a href="#set-up">Set-Up</a></b>
+|
+<b><a href="#Tutorial">Tutorial</a></b>
+|
+<b><a href="#credits">Credits</a></b>
+|
+<b><a href="#license">License</a></b>
+</p>
+![ScreenShot](./SSoverview.png?raw=true "Array Image")
 
 
-- [Intro](#intro)
-- [Dependencies](#installation)
-    - [Notes](#Notes)
-    - [Dependencies](#Dependencies)
-    
-- [Quick Feature Summary](#quick-feature-summary)
-- [User Guide](#user-guide)
-    - [General Usage](#general-usage)
-    - [Basic Tutorial](#basic-tutorial)
-
-Intro
+Overview
 -----
 
 Seismic detection code for processing seismic data from arrays with a large number of stations
@@ -30,23 +32,23 @@ in high-noise environments and 4) There is no requirement that sources are earth
 (i.e. that they are impulsive, high amplitude relative to minute-length background, etc..)  
 
 
-Installation
+Set-Up
 ------------
 
 ### Notes
 * tested on Python 2.7
 * recommend to run in seperate env if other seimic processing relies on older obspy (<0.9.x)
-    With Anaconda you can use environments with diff packages,versions etc.
+    With Conda you can use environments with diff packages,versions etc.
     Docs on managing environments here: http://conda.pydata.org/docs/using/envs.html 
 
 ### Dependencies
 * Relies on Numpy,Scipy,Pandas,and Geopy. Most can be installed with pip or ship with Anaconda
-* Seismic data access and routines from obspy
+* Requires Obspy for seismic routines and data fetch: https://github.com/obspy/obspy/wiki
 * http://pandas.pydata.org/
 * http://www.scipy.org/
 * https://github.com/geopy/geopy
-* pandas.pydata.org
-* https://github.com/obspy/obspy/wiki
+* http://pandas.pydata.org
+
 * ANF catalog import stolen from old version of detex, a python code for subspace detection
     Check it out at https://github.com/dchambers/detex.git 
     or to install git+git://github.com/d-chambers/detex
@@ -63,17 +65,17 @@ Quick Feature Summary
 * Current support for ANF catalog 
 
 
-User Guide
+Tutorial
 ----------
 
 ### General Usage
 
 * LDK.detection_function.detect('YYYY','MM','DD','HH','MM','SS',duration=7200,ndays=1,wb=1)
 
-The first 6 args are start date/time. These pipe to obspy UTCDatetime
-duration: number of seconds (2 hours is the smallest allowable increment)
-ndays:    number of days to process from start date/time
-wb:       the station list to use. Referenced from lists in the last half of Util.py
+* The first 6 args are start date/time. These pipe to obspy UTCDatetime
+* duration: number of seconds (2 hours is the smallest allowable increment)
+* ndays:    number of days to process from start date/time
+* wb:       the station list to use. Referenced from lists in the last half of Util.py
 
 ### Basic Tutorial
 
