@@ -7,7 +7,7 @@ LDK: A seismic array detection algorithm
 |
 <b><a href="#set-up">Set-Up</a></b>
 |
-<b><a href="#Tutorial">Tutorial</a></b>
+<b><a href="#tutorial">Tutorial</a></b>
 |
 <b><a href="#credits">Credits</a></b>
 |
@@ -46,8 +46,7 @@ Set-Up
 * Requires Obspy for seismic routines and data fetch: https://github.com/obspy/obspy/wiki
 * http://pandas.pydata.org/
 * http://www.scipy.org/
-* https://github.com/geopy/geopy
-* http://pandas.pydata.org
+* https://github.com/geopy/geopy/
 
 * ANF catalog import stolen from old version of detex, a python code for subspace detection
     Check it out at https://github.com/dchambers/detex.git 
@@ -56,9 +55,6 @@ Set-Up
 
 Quick Feature Summary
 -----
-
-### General
-
 * Uses coherent energy in broadband, low amplitude ranges to identify seismic events across an array
 * Input is local seismic data OR date range and station list for  obspy fetched waveform data
 * Output is a picktable (as a dataframe), and templates for each detection -organized in day directories
@@ -71,11 +67,17 @@ Tutorial
 ### General Usage
 
 * LDK.detection_function.detect('YYYY','MM','DD','HH','MM','SS',duration=7200,ndays=1,wb=1)
-
 * The first 6 args are start date/time. These pipe to obspy UTCDatetime
 * duration: number of seconds (2 hours is the smallest allowable increment)
 * ndays:    number of days to process from start date/time
 * wb:       the station list to use. Referenced from lists in the last half of Util.py
 
 ### Basic Tutorial
+
+Credits
+------------
+
+
+License
+-------------
 
