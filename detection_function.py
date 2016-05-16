@@ -9,39 +9,28 @@ Scipt to generate array images in specified year_day directories.
 From: Linville, L., K. Pankow, D. Kilb, and A. Velasco (2014), 
 doi:10.1002/2014JB011529.
 
-Parameters
-------------------
-wb : int, which basin number to import station/blast site lists from
-
-ndays: int, how many days to process, in 2 hour blocks
-
-thresholdv: float, what value above the avg area based on station space
-
-levels: which contours to generate and base detections off
-
 """
-def detect(yr='2009',mo='06',dy='17',hr='10',mn='00',sc='00',homedir='',
+def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
            duration=7200,ndays=1):
     
     """
-    Created on Wed Jan  6 12:08:15 2016
     
-    @authors: linville.seis.utah.edu; dkilb@ucsd.edu
     
-    Scipt to generate array images in specified year_day directories.
+    Function to generate array images in specified year_day directories.
     From: Linville, L., K. Pankow, D. Kilb, and A. Velasco (2014), 
     doi:10.1002/2014JB011529.
     
     Parameters
     ------------------
-    wb : int, which basin number to import station/blast site lists from
+    :wb : int, which basin number to import station/blast site lists from
+    :ndays: int, how many days to process, in 2 hour blocks
+    :duration: number of seconds, in 2 hour increments (7200)
     
-    ndays: int, how many days to process, in 2 hour blocks
-    
-    thresholdv: float, what value above the avg area based on station space
-    
-    levels: which contours to generate and base detections off
-    
+    Returns
+    ------------------
+    Day directories (ordinal day) containing picktable 
+    and waveform images from the nearest 5 stations for each detection
+
     """
     #control plot behavior
     
