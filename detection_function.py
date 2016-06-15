@@ -39,7 +39,7 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
     plt.style.use('ggplot')
     plt.rcParams['figure.figsize'] = 18,12 #width,then height
     plt.rcParams['savefig.dpi'] = 80
-    from obspy.fdsn import Client
+    from obspy.clients.fdsn import Client
     client = Client("IRIS")
     from obspy import UTCDateTime
     import numpy as np
@@ -50,6 +50,8 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
     from obspy.signal.trigger import trigger_onset as triggerOnset
     import copy,os,bisect,scipy,datetime,itertools
     import pandas as pd
+    #suppress the chained assignment warning
+    pd.options.mode.chained_assignment = None
     from mpl_toolkits.basemap import Basemap
     from obspy.taup import TauPyModel as TauP
     model = TauP(model="iasp91")
@@ -71,7 +73,7 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
     deltaf = 40
     nseconds = 7200
     npts = int(deltaf*(nseconds+edgebuffer))
-    fftsize=512
+    fftsize=256
     overlap=4   
     hop = fftsize / overlap
     w = scipy.hanning(fftsize+1)[:-1] 
@@ -109,8 +111,6 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
                 #print("Reset Sample rate for station: ",sz[i].stats.station)     
         
         sz.merge(fill_value=0)
-        sz.detrend()
-        #sz.taper(.001)
         sz.sort()
         sz.filter('highpass',freq=1.0)
     #    import pickle as pkl
@@ -164,20 +164,7 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
                 szdata = sz[z].data[blockette:blockette+npts]   
                 if len(szdata) == npts:
                     vizray.append([])
-                    specgram= np.array([np.fft.rfft(w*szdata[i:i+fftsize]) for i in range(0, len(szdata)-fftsize, hop)])
-                    sgram = np.absolute(specgram)
-                    sg = np.log10(sgram[1:, :])
-                    sg = np.transpose(sg)
-                    sg = np.flipud(sg)
-                    avgs=[]
-                    for count in range(len(sg)):
-                        avgs.append([])
-                        rmean=Ut.runningmean(sg[count,:],50)
-                        rmean[-51:] = np.median(rmean[-101:-50])
-                        rmean[:51] = np.median(rmean[52:103])
-                        avgs[count].append(rmean)
-                    jackrabbit = np.vstack(avgs)
-                    Bwhite=sg-jackrabbit
+                    Bwhite=Ut.w_spec(szdata,deltaf,fftsize)
                     vizray[shorty].append(np.sum(Bwhite[64:154,:],axis=0))
                     ll.append(newlat[z])
                     lo.append(newlon[z])
@@ -199,7 +186,7 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
                 lo[i]=longitudes[junk[0][0]]
                 slist[i]=stalist[junk[0][0]]
                 dist[junk[0][0]]=0
-            timevector = Ut.getfvals(tt,sgram,nseconds,edgebuffer)
+            timevector = Ut.getfvals(tt,Bwhite,nseconds,edgebuffer)
             #determine which level to use as detections 4* MAD
             levels=[Ut.get_levels(rays)]
             #clean up the array 
@@ -548,7 +535,7 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
                     if dtype[fi]=='earthquake':
                         svname=homedir+str(s)+"/image"+ss[11:13]+"_pick_"+str(fi+1)+".eps"
                         plt.savefig(svname,format='eps')
-                    plt.clf()
+                    plt.close()
     
     #%%
     #        #make a table for the detections during this block 
@@ -667,6 +654,7 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
             kurs = "%s/"%s +"%s.eps"%ss
             svpath=homedir+kurs
             plt.savefig(svpath, format='eps')
+            plt.close()
             
     #%%
     #    tstr = []
@@ -720,10 +708,11 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
     #%%
             blockette = blockette+(npts-nptsf)
             tt = tt+nseconds
-            detections[:]=[]
-            localev[:]=[]
-            doubles[:]=[]
-            
+            detections=[]
+            localev=[]
+            doubles=[]
+
+
     
                     
         #############################
@@ -762,8 +751,13 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
         dayat = dayat+1
         counter=counter+1
         counter_3char = str(counter).zfill(3)
-        
-    
+        plt.close()
+        df,df1=None,None
+        Basemap=None
+        sz=None
+        rays,rayz=None,None
+        alltimes=None
+        timevector=None    
         #############################
         
 #if __name__ == '__main__':

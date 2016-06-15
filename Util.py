@@ -10,13 +10,15 @@ import datetime
 from math import pi, cos, radians
 import geopy.distance as pydist
 from numpy import median, absolute
+from scipy.signal import spectrogram
 
-
-#directy use derrick's ANF parser
+#ANF event catalog parser stolen from detex: github.com/d-chambers/detex
 import pandas as pd
 import glob
 import os
 from obspy import UTCDateTime
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 
 def readANF(anfdir,lon1=-180,lon2=180,lat1=0,lat2=90,getPhases=False,UTC1='1960-01-01',
             UTC2='3000-01-01',Pcodes=['P','Pg'],Scodes=['S','Sg']):
@@ -115,17 +117,14 @@ def ANFtoTemplateKey(anfDF,temKeyName='TemplateKey_anf.csv',saveTempKey=True):
         df.to_csv(temKeyName)
     return df
 #**********************************
-    
-##test functions for blast templates
-#util.inventory2StationKey(inv,tt,tt2,fileName='StationKey.csv')
-#inv = client.get_stations(station='*',network='TA',location='*',channel='BHZ',
-#     minlatitude=blastsites[0][1]-.5,maxlatitude=blastsites[0][0]+.5,minlongitude=blastsites[0][2]-.8,
-#     maxlongitude=blastsites[0][3]+.8,level='channel')
+##functions for computing polygon area and running mean etc    
+
 def mad(data, axis=None):
     '''use numpy to calculate median absolute deviation (MAD), more robust than std'''
     return median(absolute(data - median(data, axis)), axis)
 
 def get_levels(rays):
+    """Set detection threshold based off 4 times MAD of input data"""
     a,b = np.shape(rays)
     temp = np.reshape(rays, [1,a*b])
     return mad(temp)*4
@@ -134,25 +133,23 @@ def get_saturation_value(rays):
     a,b = np.shape(rays)
     temp = np.reshape(rays, [1,a*b])
     return mad(temp)*6
-##functions for computing polygon area and running mean etc
-#def PolygonArea(corners):
-#    """Returns the x & y coordinates in meters using a sinusoidal projection"""
-#    from math import pi, cos, radians
-#    earth_radius = 6371009 # in meters
-#    lat_dist = pi * earth_radius / 180.0
-#    x=corners[:,0]
-#    y=corners[:,1]
-#    yg = [lat * lat_dist for lat in y]
-#    xg = [lon * lat_dist * cos(radians(lat)) for lat, lon in zip(x, y)]
-#    corners=[yg,xg]
-#    n = len(corners) # of corners
-#    area = 0.0
-#    for i in range(n):
-#        j = (i + 1) % n
-#        area += corners[i][0] * corners[j][1]
-#        area -= corners[j][0] * corners[i][1]
-#    area = abs(area) / 2.0
-#    return area
+    
+#clean up the array at saturation value just below the detection threshold
+def saturateArray(array):
+    """saturate array at 6*MAD """
+    shigh = get_saturation_value(array)
+    sloww = shigh*-1
+    junk=[]    
+    for i in range(np.shape(array)[0]):
+        fill = np.sum(array,axis=1)
+    if np.sum(array[i][:]) >= 2.5*mad(fill):
+        array[i][:]= np.median(array)        
+    junk = np.where(array>=shigh)
+    array[junk]=shigh
+    junk = np.where(array<=sloww)
+    array[junk]=sloww
+    return array
+    
 def PolygonArea(corners):
     earth_radius = 6371009 # in meters
     lat_dist = pi * earth_radius / 180.0
@@ -169,20 +166,10 @@ def PolygonArea(corners):
 def runningmean(x, N):
     return np.convolve(x, np.ones((N,))/N)[(N-1):]
     
-#def get_k(x,y,triangles,ratio):
-#    out = []
-#    for points in triangles:
-#        a,b,c = points
-#        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
-#        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
-#        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
-#        s=d0+d1+d2/2
-#        arear=np.sqrt(s*(s-d0)*(s-d1)*(s-d2))
-#        out.append(arear)
-#    k_value=np.min(out)*ratio
-#    return k_value
     
 def get_k(x,y,triangles,ratio):
+    """Threshold value for area based on input ratio times
+    the average station triad area"""
     out = []
     for points in triangles:
         a,b,c = points
@@ -196,17 +183,18 @@ def get_k(x,y,triangles,ratio):
     return k_value
     
 def get_edge_ratio(x,y,triangles,ratio):
+    """Mask out long edges from the station mesh. Too stingy and you get holes
+    which cause problems (spurrious detections when single station amplitudes 
+    span the gap), too large and you preferentially get detections from the 
+    long interstation distances."""
     out = []
     for points in triangles:
         a,b,c = points
         d0 = pydist.vincenty([x[a],y[a]],[x[b],y[b]]).meters
-        #d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
         out.append(d0)
         d1 = pydist.vincenty([x[b],y[b]],[x[c],y[c]]).meters
-        #d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
         out.append(d1)
         d2 = pydist.vincenty([x[c],y[c]],[x[a],y[a]]).meters
-        #d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
         out.append(d2)
     mask_length=np.median(out)*ratio
     median_edge=np.median(out)
@@ -221,9 +209,6 @@ def long_edges(x, y, triangles, ratio=2.5):
         d0 = pydist.vincenty([x[a],y[a]],[x[b],y[b]]).meters
         d1 = pydist.vincenty([x[b],y[b]],[x[c],y[c]]).meters
         d2 = pydist.vincenty([x[c],y[c]],[x[a],y[a]]).meters
-#        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
-#        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
-#        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
         max_edge = max([d0, d1, d2])
         #print points, max_edge
         if max_edge > olen:
@@ -260,31 +245,17 @@ def gettvals(tr1,tr2,tr3):
         vec += step
     return out
     
-def getfvals(tt,sgram,nseconds,edgebuffer):
+def getfvals(tt,Bwhite,nseconds,edgebuffer):
     vec = tt.datetime
     ed = tt+(nseconds+edgebuffer)
-    step = datetime.timedelta(seconds=((nseconds+edgebuffer)/float(len(sgram))))
+    step = datetime.timedelta(seconds=((nseconds+edgebuffer)/float(len(np.transpose(Bwhite)))))
     out = []
     while vec <= ed.datetime:
         out.append(vec)
         vec += step
     return out
     
-#clean up the array at saturation value just below the detection threshold
-def saturateArray(array):
-    """saturate array at 6*MAD """
-    shigh = get_saturation_value(array)
-    sloww = shigh*-1
-    junk=[]    
-    for i in range(np.shape(array)[0]):
-        fill = np.sum(array,axis=1)
-    if np.sum(array[i][:]) >= 2.5*mad(fill):
-        array[i][:]= np.median(array)        
-    junk = np.where(array>=shigh)
-    array[junk]=shigh
-    junk = np.where(array<=sloww)
-    array[junk]=sloww
-    return array
+
     
 ##get catalog data (ANF right now only)
 def getCatalogData(tt,nseconds,lo,ll):
@@ -351,11 +322,90 @@ def markType(detections,blastsites,centroids,localev,localE,ctimes,doubles):
                 dtype[event]='regional'
     return dtype,cents
     
+
     
+def w_spec(szdata,deltaf,fftsize):
+
+    specgram = spectrogram(szdata,fs=deltaf,nperseg=fftsize,window=('hanning'),scaling='spectrum')
+    sg = specgram[2]
+    bgs=[runningmean(sg[count,:],50) for count in range(len(sg))]
+    endbgs = [np.median(bgs[count][-101:-50]) for count in range(len(bgs))]
+    begbgs = [np.median(bgs[count][52:103]) for count in range(len(bgs))]
+    tbags = bgs
+    for i in range(len(bgs)):
+        for j in range(-1,-51,-1):
+            tbags[i][j] = endbgs[i]
+        for k in range(1,51,1):
+            tbags[i][k] = begbgs[i]
+    Bwhite=sg-tbags 
+    return Bwhite
+
+def reviewer(filestring='2010_*'):
+#    import pandas as pd
+#    import glob
+#    import os
+#    import matplotlib.pyplot as plt
+#    import matplotlib.image as mpimg
+    plt.rcParams['figure.figsize'] = 18,12 #width,then height
+    dlist=sorted(glob.glob(filestring), key=os.path.getmtime)
+    for eachdir in dlist:
+        os.chdir(eachdir)
+        if os.path.isfile('rptable.pkl'):
+            os.chdir('../')
+        else:
+            try:
+                df = pd.read_pickle('picktable.pkl')
+                df = df[df.Type !='blast']
+                df = df.reset_index(drop=True)
+                imlist=sorted(glob.glob('image*.eps'))
+                if len(df) == len(imlist):
+                #check df eq len and number of im's are equal
+                    count = 0
+                    for im in imlist:
+                        img = mpimg.imread(im)
+                        plt.imshow(img)
+                        plt.show()
+                        conf = input()
+                        df.Confidence[count]=conf
+                        count=count+1
+                    df.to_pickle('rptable.pkl')    
+                    os.chdir('../')
+                else:
+                    print 'length of pick table and number of images are not the same'
+                    os.chdir('../')        
+            except:
+                print 'no picktable for '+str(eachdir)
+                os.chdir('../')
+
+def cat_df(filestring='2010_*'):
+    
+    dlist=sorted(glob.glob(filestring), key=os.path.getmtime)
+    os.chdir(dlist[0])
+    df1=pd.read_pickle('rptable.pkl')
+    df1 = df1[df1.Confidence != -1]
+    os.chdir('../')
+    dlist = dlist[1:]
+    
+    for alldirs in range(len(dlist)):
+        os.chdir(dlist[alldirs])
+        try:
+            df=pd.read_pickle('rptable.pkl')
+            df = df[df.Confidence != -1]
+            df1 = pd.concat([df1,df])
+            os.chdir('../')
+        except:
+            print 'no picktable for '+dlist[alldirs]
+            os.chrid('../')
+    df1.sort_values(by='S1time', inplace=True)
+    df = df1.reset_index(drop=True)
+    
+    df.to_html('reviewed_picks.html') 
 ### get station lists for specific basin    
 def getbulk(basin,tt,duration):
     """basin= basin number to get station list"""
-    if basin ==2:
+    if basin == 5:
+        blastsites,bulk=[],[]
+    elif basin ==2:
         bulk=[("TA", "132A", "*", "BHZ", tt, tt+duration),
         ("TA", "I34A", "*", "BHZ", tt, tt+duration),
         ("TA", "I35A", "*", "BHZ", tt, tt+duration),
