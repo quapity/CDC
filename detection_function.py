@@ -641,7 +641,7 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
             for i in range(len(localE)):
                 plt.scatter(mdates.date2num(UTCDateTime(localE.time[i])),closesti[i],s=100,facecolor='c',edgecolor='grey')
             plt.imshow(np.flipud(rayz),extent = [mdates.date2num(tt), mdates.date2num(tt+nseconds+edgebuffer),  0, len(slist)],
-                         aspect='auto',interpolation='nearest',cmap='bone',vmin=-30,vmax=110)
+                         aspect='auto',interpolation='nearest',cmap='bone',vmin=np.min(rayz)/2)
             ax.set_adjustable('box-forced')
             ax.xaxis_date() 
             plt.yticks(np.arange(len(ll)))

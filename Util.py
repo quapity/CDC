@@ -66,7 +66,7 @@ def _readOrigin(originFile):
                 (211,219),(220,237)]
     
     df=pd.read_fwf(originFile,colspecs=columnSpecs,header=None,names=columnNames)
-    df['DateString']=[UTCDateTime(x).formatIRISWebService() for x in df.time]
+    df['DateString']=[UTCDateTime(x).format_iris_web_service() for x in df.time]
     return df
     
 def _readAssoc(assocFile):
@@ -127,12 +127,12 @@ def get_levels(rays):
     """Set detection threshold based off 4 times MAD of input data"""
     a,b = np.shape(rays)
     temp = np.reshape(rays, [1,a*b])
-    return mad(temp)*4
+    return mad(temp)*3
     
 def get_saturation_value(rays):
     a,b = np.shape(rays)
     temp = np.reshape(rays, [1,a*b])
-    return mad(temp)*6
+    return mad(temp)*4.5
     
 #clean up the array at saturation value just below the detection threshold
 def saturateArray(array):
@@ -148,6 +148,13 @@ def saturateArray(array):
     array[junk]=shigh
     junk = np.where(array<=sloww)
     array[junk]=sloww
+    narray = [array[x][y]/np.max(array[x][:]) for x in range(len(array)) for y in range(len(np.transpose(array)))]
+    array = np.reshape(narray,np.shape(array))
+    #if there are too many hi-amp value swaps subdue that channel
+    zcrosst = [(np.tanh(array[x][:-1]) > .5).sum() for x in range(len(array))]
+    junk= np.where(np.array(zcrosst) >= 350)
+    for each in junk[0]:
+        array[each][:] = array[each]/2
     return array
     
 def PolygonArea(corners):
@@ -325,9 +332,9 @@ def markType(detections,blastsites,centroids,localev,localE,ctimes,doubles):
 
     
 def w_spec(szdata,deltaf,fftsize):
-
-    specgram = spectrogram(szdata,fs=deltaf,nperseg=fftsize,window=('hanning'),scaling='spectrum')
-    sg = specgram[2]
+    '''return whitened spectrogram in decibles'''
+    specgram = spectrogram(szdata,fs=deltaf,nperseg=fftsize,window=('hanning'),scaling='spectrum',noverlap = fftsize/2)
+    sg = 10*np.log10(specgram[2])
     bgs=[runningmean(sg[count,:],50) for count in range(len(sg))]
     endbgs = [np.median(bgs[count][-101:-50]) for count in range(len(bgs))]
     begbgs = [np.median(bgs[count][52:103]) for count in range(len(bgs))]
@@ -339,6 +346,12 @@ def w_spec(szdata,deltaf,fftsize):
             tbags[i][k] = begbgs[i]
     Bwhite=sg-tbags 
     return Bwhite
+    
+def spec(szdata,deltaf,fftsize):
+    '''return spectrogram in decibles'''
+    specgram = spectrogram(szdata,fs=deltaf,nperseg=fftsize,window=('hanning'),scaling='spectrum')
+    sg = 10*np.log10(specgram[2]) 
+    return sg
 
 def reviewer(filestring='2010_*'):
 #    import pandas as pd
@@ -357,6 +370,8 @@ def reviewer(filestring='2010_*'):
                 df = pd.read_pickle('picktable.pkl')
                 df = df[df.Type !='blast']
                 df = df.reset_index(drop=True)
+                #lets you put in confidence as an array, 1 value for each station
+                df = df.astype(object)
                 imlist=sorted(glob.glob('image*.eps'))
                 if len(df) == len(imlist):
                 #check df eq len and number of im's are equal

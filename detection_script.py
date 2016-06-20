@@ -20,14 +20,14 @@ thresholdv: float, what value above the avg area based on station space
 levels: which contours to generate and base detections off
 
 """
-yr='2009'
-mo='01'
-dy='20'
-hr='20'
+yr='2010'
+mo='07'
+dy='15'
+hr='00'
 mn='00'
 sc='00'
 homedir=''
-duration=7200
+duration=86400
 ndays=1
 
 #control plot behavior
@@ -37,7 +37,7 @@ plt.switch_backend("nbagg")
 plt.style.use('ggplot')
 plt.rcParams['figure.figsize'] = 18,12 #width,then height
 plt.rcParams['savefig.dpi'] = 80
-from obspy.fdsn import Client
+from obspy.clients.fdsn import Client
 client = Client("IRIS")
 from obspy import UTCDateTime
 import numpy as np
@@ -185,10 +185,11 @@ for days in range(ndays):
             slist[i]=stalist[junk[0][0]]
             dist[junk[0][0]]=0
         timevector = Ut.getfvals(tt,Bwhite,nseconds,edgebuffer)
-        #determine which level to use as detections 4* MAD
-        levels=[Ut.get_levels(rays)]
+
         #clean up the array 
         rayz = Ut.saturateArray(rayz)
+        #determine which level to use as detections 4* MAD
+        levels=[Ut.get_levels(rayz)]
         #get the ANF catalog events and get closest station
         
         localE,globalE,closesti=Ut.getCatalogData(tt,nseconds,lo,ll)
@@ -639,7 +640,7 @@ for days in range(ndays):
         for i in range(len(localE)):
             plt.scatter(mdates.date2num(UTCDateTime(localE.time[i])),closesti[i],s=100,facecolor='c',edgecolor='grey')
         plt.imshow(np.flipud(rayz),extent = [mdates.date2num(tt), mdates.date2num(tt+nseconds+edgebuffer),  0, len(slist)],
-                     aspect='auto',interpolation='nearest',cmap='bone',vmin=-30,vmax=110)
+                     aspect='auto',interpolation='nearest',cmap='bone',vmin=np.min(rayz)/2)
         ax.set_adjustable('box-forced')
         ax.xaxis_date() 
         plt.yticks(np.arange(len(ll)))
