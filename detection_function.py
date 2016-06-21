@@ -187,15 +187,14 @@ def detect(yr='2009',mo='01',dy='20',hr='20',mn='20',sc='00',homedir='',
                 slist[i]=stalist[junk[0][0]]
                 dist[junk[0][0]]=0
             timevector = Ut.getfvals(tt,Bwhite,nseconds,edgebuffer)
-            #determine which level to use as detections 4* MAD
-            levels=[Ut.get_levels(rays)]
             #clean up the array 
             rayz = Ut.saturateArray(rayz)
+            #determine which level to use as detections 4* MAD
+            levels=[Ut.get_levels(rayz)]
+            if levels[0] < .65:
+                levels = [.75]
             #get the ANF catalog events and get closest station
-            
             localE,globalE,closesti=Ut.getCatalogData(tt,nseconds,lo,ll)
-    
-    
             #closesti = np.flipud(closesti) 
             #unstructured triangular mesh with stations as verticies, mask out the long edges
             triang = tri.Triangulation(lo, ll)

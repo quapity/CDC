@@ -190,6 +190,8 @@ for days in range(ndays):
         rayz = Ut.saturateArray(rayz)
         #determine which level to use as detections 4* MAD
         levels=[Ut.get_levels(rayz)]
+        if levels[0] < .65:
+            levels = [.75]
         #get the ANF catalog events and get closest station
         
         localE,globalE,closesti=Ut.getCatalogData(tt,nseconds,lo,ll)
