@@ -42,10 +42,11 @@ Set-Up
     Docs on managing environments here: http://conda.pydata.org/docs/using/envs.html 
 
 ### Dependencies
-* Relies on Numpy,Scipy,Pandas,and Geopy. Most can be installed with pip or ship with Anaconda
+* Relies on Numpy,Scipy,Pandas, Basemap and Geopy. Most can be installed with pip or ship with Anaconda
     - http://pandas.pydata.org
     - http://scipy.org
     - https://github.com/geopy/geopy
+    - https://basemaptutorial.readthedocs.io/en/latest/
 * Requires Obspy for seismic routines and data fetch 
     - https://github.com/obspy/obspy/wiki
 * ANF catalog import stolen from old version of detex, a python code for subspace detection. Check it out at:
