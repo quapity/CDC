@@ -13,8 +13,8 @@ LDK: A seismic array detection algorithm
 |
 <b><a href="#license">License</a></b>
 </p>
-![ScreenShot](./SSoverview.png?raw=true "Array Image")
 
+![ScreenShot](https://github.com/quapity/LDK/raw/master/SSoverview.png)
 
 Overview
 -----
