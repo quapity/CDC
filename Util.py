@@ -11,7 +11,7 @@ from math import pi, cos, radians
 import geopy.distance as pydist
 from numpy import median, absolute
 from scipy.signal import spectrogram
-
+import copy
 #ANF event catalog parser stolen from detex: github.com/d-chambers/detex
 import pandas as pd
 import glob
@@ -19,11 +19,47 @@ import os
 from obspy import UTCDateTime
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
+from sklearn.cluster import AffinityPropagation
+from sklearn import preprocessing
+
+from scipy import fftpack
+
+from obspy.signal.freqattributes  \
+     import central_frequency_unwindowed
+from obspy.clients.fdsn import Client
+client = Client('IRIS')
+     
+def max_period(data):
+    findex = fftpack.rfftfreq(n=len(data),d=1/40.0)
+    vals =abs(fftpack.rfft(data))   
+    return np.round(findex[np.where(vals == np.max(vals))[0][0]],2)
+
+def parts_period(data):
+    findex = fftpack.rfftfreq(n=len(data),d=1/40.0)
+    vals =abs(fftpack.rfft(data))
+    f1 = np.sum(vals[np.where((np.array(findex) >5) & (np.array(findex) < 8))[0]])/np.sum(vals[np.where((np.array(findex) >=2) & (np.array(findex) < 3))[0]])
+    f2 = np.sum(vals[np.where((np.array(findex) >9) & (np.array(findex) < 12))[0]])/np.sum(vals[np.where((np.array(findex) >=2) & (np.array(findex) < 3))[0]])
+    f3 = np.sum(vals[np.where((np.array(findex) >12) & (np.array(findex) < 18))[0]])/np.sum(vals[np.where((np.array(findex) >=2) & (np.array(findex) < 3))[0]])
+    f4 = np.sum(vals[np.where((np.array(findex) >18) & (np.array(findex) < 20))[0]])/np.sum(vals[np.where((np.array(findex) >=2) & (np.array(findex) < 3))[0]])    
+    return [f1,f2,f3,f4]
+
+def central_deriv(data):
+    ix = int(len(data)/2) 
+    fs = 40.0
+    top = central_frequency_unwindowed(data[ix:],fs)
+    bot = central_frequency_unwindowed(data[:ix],fs)
+    return np.round(top/bot,2)
+
+def hour_of(data):
+    return np.round(UTCDateTime(data.stats.starttime).hour/12,2)
+
+def cent_freq(data,fs):
+    return central_frequency_unwindowed(data,fs)
 
 def readANF(anfdir,lon1=-180,lon2=180,lat1=0,lat2=90,getPhases=False,UTC1='1960-01-01',
             UTC2='3000-01-01',Pcodes=['P','Pg'],Scodes=['S','Sg']):
     """Function to read the ANF directories as downloaded from the ANF Earthscope Website"""
-    monthDirs=glob.glob(os.path.join(anfdir,'*'))
+    monthDirs=glob.glob(os.path.join(anfdir,'*_events'))
     Eve=pd.DataFrame()
     for month in monthDirs:
         utc1=UTCDateTime(UTC1).timestamp
@@ -132,10 +168,10 @@ def get_levels(rays):
 def get_saturation_value(rays):
     a,b = np.shape(rays)
     temp = np.reshape(rays, [1,a*b])
-    return mad(temp)*4.5
+    return mad(temp)*4
     
 #clean up the array at saturation value just below the detection threshold
-def saturateArray(array):
+def saturate_array(array):
     """saturate array at 6*MAD """
     shigh = get_saturation_value(array)
     sloww = shigh*-1
@@ -150,14 +186,16 @@ def saturateArray(array):
     array[junk]=sloww
     narray = [array[x][y]/np.max(array[x][:]) for x in range(len(array)) for y in range(len(np.transpose(array)))]
     array = np.reshape(narray,np.shape(array))
-    #if there are too many hi-amp value swaps subdue that channel
-    zcrosst = [(np.tanh(array[x][:-1]) > .5).sum() for x in range(len(array))]
-    junk= np.where(np.array(zcrosst) >= 350)
-    for each in junk[0]:
-        array[each][:] = array[each]/2
+#    #if there are too many hi-amp value swaps subdue that channel
+#    zcrosst = [(np.tanh(array[x][:-1]) > .5).sum() for x in range(len(array))]
+#    junk= np.where(np.array(zcrosst) >= 350)
+#    for each in junk[0]:
+#        array[each][:] = array[each]/2
     return array
     
-def PolygonArea(corners):
+
+    
+def polygon_area(corners):
     earth_radius = 6371009 # in meters
     lat_dist = pi * earth_radius / 180.0
     x=corners[:,0]
@@ -166,13 +204,95 @@ def PolygonArea(corners):
     xg = [lon * lat_dist * cos(radians(lat)) for lat, lon in zip(y,x)]
     corners=[yg,xg]
     area = 0.0
-    for i in xrange(-1, len(xg)-1):
+    for i in range(-1, len(xg)-1):
         area += xg[i] * (yg[i+1] - yg[i-1])
     return abs(area) / 2.0
- 
+
+def chain_picks(ctimeindex,ctimes,centroids):
+    idxx = ctimeindex
+    if len(idxx) > 0:
+        idx=[]
+        iiic = [UTCDateTime(x).timestamp for x in ctimes]
+        centers = list(zip([x[0][0] for x in centroids],[x[0][1] for x in centroids],iiic))
+        XX = [list(x) for x in centers]
+        #X_scaled = preprocessing.scale(XX)
+        #X, labels_true = make_blobs(n_samples=len(idxx), centers=[tuple(x) for x in X_scaled], cluster_std=2,
+        #                    random_state=0,shuffle=False)
+        af = AffinityPropagation(preference=-1,damping=.6).fit(XX)
+        #cluster_centers_indices = af.cluster_centers_indices_
+        labels = af.labels_
+        try:
+            for lbl in set(labels):
+                finder =np.where(labels == lbl)[0]
+                if len(finder) > 1:
+                    idx.append(finder[0])
+        except TypeError:
+            idx=[]
+        tofilter = idx
+        detections = filter_doubles(tofilter,centroids,ctimes)
+    return(detections,labels,af)
+
+
+def chain_picksby_timedist(ctimeindex,ctimes,centroids):
+    iii=[]
+    for i in range(len(ctimeindex)-1):
+        if i < len(ctimes)-3:
+            iterlist = [1,2,3]
+        elif i < len(ctimes)-2:
+            iterlist = [1,2]
+        else:
+            iterlist =[1]
+        for j in iterlist:
+            timedelta = ctimes[i+j]-ctimes[i]
+            distdelta = pydist.vincenty(centroids[i],centroids[i+j]).meters
+            if timedelta.seconds < 60 and distdelta < 250000:
+                iii.append(i+j)
+    idx = list(set(range(len(ctimes))).symmetric_difference(iii))
+
+    return np.array(ctimeindex)[idx],np.array(ctimes)[idx],np.vstack(np.array(centroids)[idx])           
+
 def runningmean(x, N):
-    return np.convolve(x, np.ones((N,))/N)[(N-1):]
+    return np.convolve(x, np.ones((N,))/N, 'valid')
+
+def closest_node_unsort(node,nodes,n):
+    if len(nodes) == 1:
+        return np.array([0])
+    else:
+        nodes = np.asarray(nodes)
+        dist_2 = np.sum((nodes-node)**2,axis=1)
+        return np.argpartition(dist_2,n)[:n]
+
+def closest_node(node,nodes,n):
+    if len(nodes) == 1:
+        return np.array([0])
+    else:
+        nodes = np.asarray(nodes)
+        dist_2 = np.sum((nodes-node)**2,axis=1)
+        return np.argsort(dist_2,axis=0)[:n]
+        
+def node_dist(node1,node2):
+    return pydist.vincenty(node1,node2).meters/1000.0
     
+def filter_doubles(detections,centroids,ctimes):
+    tempdetections = copy.copy(detections)
+    for i in range(len(detections)-1):
+        ix = detections[i]
+        ixx= detections[i+1]
+        dist= pydist.vincenty(centroids[ix],centroids[ixx]).meters/1000.0 
+        dtime=UTCDateTime(ctimes[ixx])-UTCDateTime(ctimes[ix])
+        if dist < 250 and dtime < 60:
+            tempdetections.remove(ixx)
+    return tempdetections
+
+    
+def reorder_arrays(ll,lo,slist,rayz):
+    ix = np.where(np.array(ll) == min(ll))[0][0]
+    rorder = closest_node((lo[ix],ll[ix]),list(zip(lo,ll)),len(ll))
+    rayzr = [rayz[x] for x in rorder]
+    llr = [ll[x] for x in rorder]
+    lor = [lo[x] for x in rorder]
+    slistr =  [slist[x] for x in rorder]
+    return llr,lor,slistr,rayzr
     
 def get_k(x,y,triangles,ratio):
     """Threshold value for area based on input ratio times
@@ -194,28 +314,38 @@ def get_edge_ratio(x,y,triangles,ratio):
     which cause problems (spurrious detections when single station amplitudes 
     span the gap), too large and you preferentially get detections from the 
     long interstation distances."""
-    out = []
+    out,outl= [],[]
     for points in triangles:
         a,b,c = points
-        d0 = pydist.vincenty([x[a],y[a]],[x[b],y[b]]).meters
+        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
+        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
+        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
         out.append(d0)
-        d1 = pydist.vincenty([x[b],y[b]],[x[c],y[c]]).meters
         out.append(d1)
-        d2 = pydist.vincenty([x[c],y[c]],[x[a],y[a]]).meters
         out.append(d2)
+        d0 = pydist.vincenty([x[a],y[a]],[x[b],y[b]]).meters
+        outl.append(d0)
+        d1 = pydist.vincenty([x[b],y[b]],[x[c],y[c]]).meters
+        outl.append(d1)
+        d2 = pydist.vincenty([x[c],y[c]],[x[a],y[a]]).meters
+        outl.append(d2)
     mask_length=np.median(out)*ratio
-    median_edge=np.median(out)
+    #need the median edge in meters
+    median_edge=np.median(outl)
     return mask_length,median_edge
 
-def long_edges(x, y, triangles, ratio=2.5):
+def long_edges(x, y, triangles, ratio=1.9):
     olen,edgeL=get_edge_ratio(x,y,triangles,ratio)
     out = []
     for points in triangles:
         #print points
         a,b,c = points
-        d0 = pydist.vincenty([x[a],y[a]],[x[b],y[b]]).meters
-        d1 = pydist.vincenty([x[b],y[b]],[x[c],y[c]]).meters
-        d2 = pydist.vincenty([x[c],y[c]],[x[a],y[a]]).meters
+        d0 = np.sqrt( (x[a] - x[b]) **2 + (y[a] - y[b])**2 )
+        d1 = np.sqrt( (x[b] - x[c]) **2 + (y[b] - y[c])**2 )
+        d2 = np.sqrt( (x[c] - x[a]) **2 + (y[c] - y[a])**2 )
+        #d0 = pydist.vincenty([x[a],y[a]],[x[b],y[b]]).meters
+        #d1 = pydist.vincenty([x[b],y[b]],[x[c],y[c]]).meters
+        #d2 = pydist.vincenty([x[c],y[c]],[x[a],y[a]]).meters
         max_edge = max([d0, d1, d2])
         #print points, max_edge
         if max_edge > olen:
@@ -252,10 +382,10 @@ def gettvals(tr1,tr2,tr3):
         vec += step
     return out
     
-def getfvals(tt,Bwhite,nseconds,edgebuffer):
+def getfvals(tt,bshape,nseconds,edgebuffer):
     vec = tt.datetime
-    ed = tt+(nseconds+edgebuffer)
-    step = datetime.timedelta(seconds=((nseconds+edgebuffer)/float(len(np.transpose(Bwhite)))))
+    ed = tt+(nseconds+edgebuffer-.1)
+    step = datetime.timedelta(seconds=((nseconds+edgebuffer)/bshape))
     out = []
     while vec <= ed.datetime:
         out.append(vec)
@@ -265,8 +395,9 @@ def getfvals(tt,Bwhite,nseconds,edgebuffer):
 
     
 ##get catalog data (ANF right now only)
-def getCatalogData(tt,nseconds,lo,ll):
-    import geopy.distance as pydist
+def get_catalog_data(tt,nseconds,lo,ll):
+    #import geopy.distance as pydist
+    nodes =list(zip(ll,lo))
     localE= readANF('anfdir',UTC1=tt,UTC2=tt+nseconds, lon1=min(lo),lon2=max(lo),lat1=min(ll),lat2=max(ll))
     globalE= readANF('anfdir',UTC1=tt,UTC2=tt+nseconds)
     #fix for issue 011: remove events from global that overlap with local
@@ -275,16 +406,27 @@ def getCatalogData(tt,nseconds,lo,ll):
         dg = globalE[globalE.DateString != localE.DateString[i]]
         globalE =dg
     globalE = globalE.reset_index(drop=True)
-    distarray,closesti=[],[]
+    closesti=[]
     for event in range(len(localE)):
-        for each in range(len(ll)):
-            distarray.append(pydist.vincenty([localE.Lat[event],localE.Lon[event]],[ll[each],lo[each]]).meters)
-        closesti.append(np.argmin(distarray))
-        distarray = []
+        closesti.append(closest_node([localE.Lat[event],localE.Lon[event]],nodes,1))
     return localE,globalE,closesti
 
+def get_centroid(vs):
+    x = vs[:,0]
+    y = vs[:,1]
+    points = np.array([x,y])
+    points = points.transpose()
+    sx = sy = sL = 0
+    for i in range(len(points)):   
+        x0, y0 = points[i - 1]     
+        x1, y1 = points[i]
+        L = ((x1 - x0)**2 + (y1 - y0)**2) ** 0.5
+        sx += (x0 + x1)/2 * L
+        sy += (y0 + y1)/2 * L
+        sL += L
+    return sx/sL,sy/sL
 
-def bestCentroid(detections,localev,centroids,localE,ctimes):
+def best_centroid(detections,localev,centroids,localE,ctimes):
     import bisect
     from obspy import UTCDateTime
     centroid = np.empty([len(detections),2])
@@ -294,7 +436,7 @@ def bestCentroid(detections,localev,centroids,localE,ctimes):
        
     for each in range(len(detections)):
         
-        if localev.count(detections[each]) >0:
+        if localev.count(detections[each]) ==1:
             localEi=bisect.bisect_left(atimes, (ctimes[detections[each]]))
             if localEi == 0:
                 centroid[each][0]=localE.Lat[localEi]
@@ -309,8 +451,8 @@ def bestCentroid(detections,localev,centroids,localE,ctimes):
     return centroid
 
    
-def markType(detections,blastsites,centroids,localev,localE,ctimes,doubles):
-    cents= bestCentroid(detections,localev,centroids,localE,ctimes)    
+def mark_type(detections,blastsites,centroids,localev,localE,ctimes,doubles):
+    cents= best_centroid(detections,localev,centroids,localE,ctimes)    
     temp = np.empty([len(detections),len(blastsites)])
     dtype = []
     for event in range(len(detections)):
@@ -331,20 +473,29 @@ def markType(detections,blastsites,centroids,localev,localE,ctimes,doubles):
     
 
     
+#def w_spec(szdata,deltaf,fftsize):
+#    '''return whitened spectrogram in decibles'''
+#    specgram = spectrogram(szdata,fs=deltaf,nperseg=fftsize,window=('hanning'),scaling='spectrum',noverlap = fftsize/2)
+#    sg = 10*np.log10(specgram[2])
+#    bgs=[runningmean(sg[count,:],50) for count in range(len(sg))]
+##    endbgs = [np.median(bgs[count][-101:-50]) for count in range(len(bgs))]
+##    begbgs = [np.median(bgs[count][52:103]) for count in range(len(bgs))]
+##    tbags = bgs
+##    for i in range(len(bgs)):
+##        for j in range(-1,-51,-1):
+##            tbags[i][j] = endbgs[i]
+##        for k in range(1,51,1):
+##            tbags[i][k] = begbgs[i]
+#    Bwhite=sg-bgs 
+#    return Bwhite
+
 def w_spec(szdata,deltaf,fftsize):
     '''return whitened spectrogram in decibles'''
     specgram = spectrogram(szdata,fs=deltaf,nperseg=fftsize,window=('hanning'),scaling='spectrum',noverlap = fftsize/2)
     sg = 10*np.log10(specgram[2])
-    bgs=[runningmean(sg[count,:],50) for count in range(len(sg))]
-    endbgs = [np.median(bgs[count][-101:-50]) for count in range(len(bgs))]
-    begbgs = [np.median(bgs[count][52:103]) for count in range(len(bgs))]
-    tbags = bgs
-    for i in range(len(bgs)):
-        for j in range(-1,-51,-1):
-            tbags[i][j] = endbgs[i]
-        for k in range(1,51,1):
-            tbags[i][k] = begbgs[i]
-    Bwhite=sg-tbags 
+    sgpadded = np.concatenate((np.fliplr(sg[:,:24]),sg,np.fliplr(sg[:,-25:])),axis=1)
+    bgs = [runningmean(sgpadded[count,:],50) for count in range(len(sgpadded))]
+    Bwhite=sg-bgs 
     return Bwhite
     
 def spec(szdata,deltaf,fftsize):
@@ -386,11 +537,13 @@ def reviewer(filestring='2010_*'):
                     df.to_pickle('rptable.pkl')    
                     os.chdir('../')
                 else:
-                    print 'length of pick table and number of images are not the same'
+                    print('length of pick table and number of images are not the same')
                     os.chdir('../')        
             except:
-                print 'no picktable for '+str(eachdir)
+                print('no picktable for '+str(eachdir))
                 os.chdir('../')
+
+
 
 def cat_df(filestring='2010_*'):
     
@@ -409,7 +562,7 @@ def cat_df(filestring='2010_*'):
             df1 = pd.concat([df1,df])
             os.chdir('../')
         except:
-            print 'no picktable for '+dlist[alldirs]
+            print('no picktable for '+dlist[alldirs])
             os.chrid('../')
     df1.sort_values(by='S1time', inplace=True)
     df = df1.reset_index(drop=True)
@@ -418,919 +571,36 @@ def cat_df(filestring='2010_*'):
 ### get station lists for specific basin    
 def getbulk(basin,tt,duration):
     """basin= basin number to get station list"""
-    if basin == 5:
-        blastsites,bulk=[],[]
-    elif basin ==2:
-        bulk=[("TA", "132A", "*", "BHZ", tt, tt+duration),
-        ("TA", "I34A", "*", "BHZ", tt, tt+duration),
-        ("TA", "I35A", "*", "BHZ", tt, tt+duration),
-        ("TA", "I36A", "*", "BHZ", tt, tt+duration),
-        ("TA", "I37A", "*", "BHZ", tt, tt+duration),
-        ("TA", "I38A", "*", "BHZ", tt, tt+duration),
-        ("TA", "I39A", "*", "BHZ", tt, tt+duration),
-        ("TA", "J32A", "*", "BHZ", tt, tt+duration),
-        ("TA", "J33A", "*", "BHZ", tt, tt+duration),
-        ("TA", "J34A", "*", "BHZ", tt, tt+duration),
-        ("TA", "J35A", "*", "BHZ", tt, tt+duration),
-        ("TA", "J36A", "*", "BHZ", tt, tt+duration),
-        ("TA", "J37A", "*", "BHZ", tt, tt+duration),
-        ("TA", "J38A", "*", "BHZ", tt, tt+duration),
-        ("TA", "J39A", "*", "BHZ", tt, tt+duration),
-        ("TA", "J40A", "*", "BHZ", tt, tt+duration),
-        ("TA", "K32A", "*", "BHZ", tt, tt+duration),
-        ("TA", "K33A", "*", "BHZ", tt, tt+duration),
-        ("TA", "K34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "K35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "K36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "K37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "K38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "K39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "K40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "L32A", "*", "BHZ", tt, tt+duration),
-       ("TA", "L33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "L34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "L35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "L36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "L37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "L38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "L39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "L40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "L41A", "*", "BHZ", tt, tt+duration),
-       ("TA", "M33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "M34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "M35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "M36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "M37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "M38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "M39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "M40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "M41A", "*", "BHZ", tt, tt+duration),
-       ("TA", "N32A", "*", "BHZ", tt, tt+duration),
-       ("TA", "N33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "N34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "N35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "N36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "N37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "N38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "N39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "N40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "N41A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O30A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O31A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O32A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "O41A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P30A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P31A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P32A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P39B", "*", "BHZ", tt, tt+duration),
-       ("TA", "P39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P41A", "*", "BHZ", tt, tt+duration),
-       ("TA", "P42A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q30A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q31A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q32A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q41A", "*", "BHZ", tt, tt+duration),
-       ("TA", "Q42A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R30A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R31A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R32A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R41A", "*", "BHZ", tt, tt+duration),
-       ("TA", "R42A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S30A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S31A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S32A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S41A", "*", "BHZ", tt, tt+duration),
-       ("TA", "S42A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T30A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T31A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T32A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "T42A", "*", "BHZ", tt, tt+duration),
-       ("US", "ECSD", "00", "BHZ", tt, tt+duration),
-       ("US", "KSU1", "00", "BHZ", tt, tt+duration),
-       ("US", "SCIA", "00", "BHZ", tt, tt+duration),
-       ("NM", "FVM", "*", "BHZ", tt, tt+duration),
-       ("NM", "JCMO", "*", "BHZ", tt, tt+duration),
-       ("NM", "MGMO", "*", "BHZ", tt, tt+duration),
-       ("NM", "PBMO", "*", "BHZ", tt, tt+duration),
-       ("NM", "SCMO", "*", "BHZ", tt, tt+duration),
-       ("OK", "KAY1", "*", "HHZ", tt, tt+duration),
-       ("OK", "BLOK", "*", "HHZ", tt, tt+duration),
-       ("XO", "MD02", "*", "BHZ", tt, tt+duration),
-       ("XO", "MD04", "*", "BHZ", tt, tt+duration),
-       ("XO", "MD06", "*", "BHZ", tt, tt+duration),
-       ("XO", "MD08", "*", "BHZ", tt, tt+duration),
-       ("XO", "ME01", "*", "BHZ", tt, tt+duration),
-       ("XO", "ME03", "*", "BHZ", tt, tt+duration),
-       ("XO", "ME05", "*", "BHZ", tt, tt+duration),
-       ("XO", "ME07", "*", "BHZ", tt, tt+duration),
-       ("XO", "MF02", "*", "BHZ", tt, tt+duration),
-       ("XO", "MF04", "*", "BHZ", tt, tt+duration),
-       ("XO", "MF08", "*", "BHZ", tt, tt+duration),
-       ("XO", "MF10", "*", "BHZ", tt, tt+duration),
-       ("XO", "MG03", "*", "BHZ", tt, tt+duration),
-       ("XO", "MG05", "*", "BHZ", tt, tt+duration),
-       ("XO", "MG07", "*", "BHZ", tt, tt+duration),
-       ("XO", "MG09", "*", "BHZ", tt, tt+duration),
-       ("ZL", "N11M", "*", "BHZ", tt, tt+duration),
-       ("ZL", "N12M", "*", "BHZ", tt, tt+duration),
-       ("ZL", "N19M", "*", "BHZ", tt, tt+duration),
-       ("ZL", "N21M", "*", "BHZ", tt, tt+duration),
-       ("ZL", "N27M", "*", "BHZ", tt, tt+duration),
-       ("TA", "G30A", "*", "BHZ", tt, tt+duration),
-       ("TA", "G31A", "*", "BHZ", tt, tt+duration),
-       ("TA", "G32A", "*", "BHZ", tt, tt+duration),
-       ("TA", "G33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "G34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "G35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "G36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "G37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "G38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "G39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "G40A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H30A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H31A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H32A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H33A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H34A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H35A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H36A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H37A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H38A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H39A", "*", "BHZ", tt, tt+duration),
-       ("TA", "H40A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U30A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U31A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U32A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U33A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U34A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U35A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U36A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U37A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U38A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U39A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U40A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V30A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V31A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V32A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V33A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V34A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V35A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V36A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V37A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V38A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V39A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V40A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V41A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "V42A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U41A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "U42A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "W34A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "W35A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "W36A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "W37A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "W38A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "W39A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "W40A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "W41A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "W42A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "X34A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "X35A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "X36A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "X37A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "X38A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "X39A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "X40A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "X41A", "*", "BHZ", tt, tt+duration),
-#       ("TA", "X42A", "*", "BHZ", tt, tt+duration),
-
-]
+    if basin >= 5:
         blastsites=[]
-    elif basin ==3:
-        bulk=[ ("TA", "D41A", "*", "BHZ", tt, tt+duration),
-     ("TA", "D46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "D47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "D48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "D49A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E39A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E40A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E41A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E42A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E43A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E44A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E45A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "E50A", "*", "BHZ", tt, tt+duration),
-     ("TA", "F39A", "*", "BHZ", tt, tt+duration),
-     ("TA", "F40A", "*", "BHZ", tt, tt+duration),
-     ("TA", "F41A", "*", "BHZ", tt, tt+duration),    
-     ("TA", "F42A", "*", "BHZ", tt, tt+duration),
-     ("TA", "F43A", "*", "BHZ", tt, tt+duration),
-     ("TA", "F44A", "*", "BHZ", tt, tt+duration),
-     ("TA", "F45A", "*", "BHZ", tt, tt+duration),
-     ("TA", "F46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "F48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "F49A", "*", "BHZ", tt, tt+duration),
-     ("TA", "G40A", "*", "BHZ", tt, tt+duration),
-     ("TA", "G41A", "*", "BHZ", tt, tt+duration),
-     ("TA", "G42A", "*", "BHZ", tt, tt+duration),
-     ("TA", "G43A", "*", "BHZ", tt, tt+duration),
-     ("TA", "G45A", "*", "BHZ", tt, tt+duration),
-     ("TA", "G46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "G47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "H42A", "*", "BHZ", tt, tt+duration),
-     ("TA", "H43A", "*", "BHZ", tt, tt+duration),
-     ("TA", "H45A", "*", "BHZ", tt, tt+duration),
-     ("TA", "H46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "H47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "H48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "I42A", "*", "BHZ", tt, tt+duration),
-     ("TA", "I43A", "*", "BHZ", tt, tt+duration),
-     ("TA", "I45A", "*", "BHZ", tt, tt+duration),
-     ("TA", "I46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "I47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "I48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "I49A", "*", "BHZ", tt, tt+duration),
-     ("TA", "I51A", "*", "BHZ", tt, tt+duration),
-     ("TA", "J43A", "*", "BHZ", tt, tt+duration),
-     ("TA", "J45A", "*", "BHZ", tt, tt+duration),
-     ("TA", "J46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "J47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "J48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "J49A", "*", "BHZ", tt, tt+duration),
-     ("TA", "K43A", "*", "BHZ", tt, tt+duration),
-     ("TA", "K46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "K47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "K48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "K49A", "*", "BHZ", tt, tt+duration),
-     ("TA", "K50A", "*", "BHZ", tt, tt+duration),
-     ("TA", "K51A", "*", "BHZ", tt, tt+duration),
-     ("TA", "K52A", "*", "BHZ", tt, tt+duration),
-     ("TA", "L43A", "*", "BHZ", tt, tt+duration),
-     ("TA", "L44A", "*", "BHZ", tt, tt+duration),
-     ("TA", "L46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "L47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "L48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "L49A", "*", "BHZ", tt, tt+duration),
-     ("TA", "L50A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M43A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M44A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M45A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M49A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M50A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M51A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M52A", "*", "BHZ", tt, tt+duration),
-     ("TA", "M53A", "*", "BHZ", tt, tt+duration),
-     ("TA", "N44A", "*", "BHZ", tt, tt+duration),
-     ("TA", "N45A", "*", "BHZ", tt, tt+duration),
-     ("TA", "N46A", "*", "BHZ", tt, tt+duration),
-     ("TA", "N47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "N48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "N49A", "*", "BHZ", tt, tt+duration),
-     ("TA", "N50A", "*", "BHZ", tt, tt+duration),
-     ("TA", "N51A", "*", "BHZ", tt, tt+duration),
-     ("TA", "N52A", "*", "BHZ", tt, tt+duration),
-     ("TA", "N53A", "*", "BHZ", tt, tt+duration),
-     ("TA", "O44A", "*", "BHZ", tt, tt+duration),
-     ("TA", "O45A", "*", "BHZ", tt, tt+duration),
-     ("TA", "O47A", "*", "BHZ", tt, tt+duration),
-     ("TA", "O48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "O48A", "*", "BHZ", tt, tt+duration),
-     ("TA", "O49A", "*", "BHZ", tt, tt+duration),
-     ("TA", "O50A", "*", "BHZ", tt, tt+duration),
-     ("TA", "O51A", "*", "BHZ", tt, tt+duration),
-     ("TA", "O52A", "*", "BHZ", tt, tt+duration),
-     ("TA", "O53A", "*", "BHZ", tt, tt+duration),
-     ("TA", "SFIN", "*", "BHZ", tt, tt+duration)]
-        blastsites = [] 
+        bulk = []
+ 
     elif basin ==1:
         bulk=[ ("TA", "D41A", "*", "BHZ", tt, tt+duration),
      ("TA","A19A","*","BHZ",tt,tt+duration),
      ("TA","A20A","*","BHZ",tt,tt+duration),
-     ("TA","A21A","*","BHZ",tt,tt+duration),
-     ("TA","A22A","*","BHZ",tt,tt+duration),
-     ("TA","A23A","*","BHZ",tt,tt+duration),
-     ("TA","A24A","*","BHZ",tt,tt+duration),
-     ("TA","A25A","*","BHZ",tt,tt+duration),
-     ("TA","A26A","*","BHZ",tt,tt+duration),
-     ("TA","A27A","*","BHZ",tt,tt+duration),
-     ("TA","A28A","*","BHZ",tt,tt+duration),
-     ("TA","A29A","*","BHZ",tt,tt+duration),
-     ("TA","A30A","*","BHZ",tt,tt+duration),
-     ("TA","A31A","*","BHZ",tt,tt+duration),
-     ("TA","A32A","*","BHZ",tt,tt+duration),
-     ("TA","B19A","*","BHZ",tt,tt+duration),
-     ("TA","B20A","*","BHZ",tt,tt+duration),
-     ("TA","B21A","*","BHZ",tt,tt+duration),
-     ("TA","B22A","*","BHZ",tt,tt+duration),
-     ("TA","B23A","*","BHZ",tt,tt+duration),
-     ("TA","B25A","*","BHZ",tt,tt+duration),
-     ("TA","B26A","*","BHZ",tt,tt+duration),
-     ("TA","B27A","*","BHZ",tt,tt+duration),
-     ("TA","B28A","*","BHZ",tt,tt+duration),
-     ("TA","B29A","*","BHZ",tt,tt+duration),
-     ("TA","B30A","*","BHZ",tt,tt+duration),
-     ("TA","B31A","*","BHZ",tt,tt+duration),
-     ("TA","B32A","*","BHZ",tt,tt+duration),
-     ("TA","BGNE","*","BHZ",tt,tt+duration),
-     ("TA","BRSD","*","BHZ",tt,tt+duration),
-     ("TA","C20A","*","BHZ",tt,tt+duration),
-     ("TA","C21A","*","BHZ",tt,tt+duration),
-     ("TA","C22A","*","BHZ",tt,tt+duration),
-     ("TA","C23A","*","BHZ",tt,tt+duration),
-     ("TA","C24A","*","BHZ",tt,tt+duration),
-     ("TA","C25A","*","BHZ",tt,tt+duration),
-     ("TA","C26A","*","BHZ",tt,tt+duration),
-     ("TA","C27A","*","BHZ",tt,tt+duration),
-     ("TA","C28A","*","BHZ",tt,tt+duration),
-     ("TA","C30A","*","BHZ",tt,tt+duration),
-     ("TA","C31A","*","BHZ",tt,tt+duration),
-     ("TA","C32A","*","BHZ",tt,tt+duration),
-     ("TA","D19A","*","BHZ",tt,tt+duration),
-     ("TA","D20A","*","BHZ",tt,tt+duration),
-     ("TA","D21A","*","BHZ",tt,tt+duration),
-     ("TA","D22A","*","BHZ",tt,tt+duration),
-     ("TA","D23A","*","BHZ",tt,tt+duration),
-     ("TA","D24A","*","BHZ",tt,tt+duration),
-     ("TA","D25A","*","BHZ",tt,tt+duration),
-     ("TA","D26A","*","BHZ",tt,tt+duration),
-     ("TA","D27A","*","BHZ",tt,tt+duration),
-     ("TA","D28A","*","BHZ",tt,tt+duration),
-     ("TA","D29A","*","BHZ",tt,tt+duration),
-     ("TA","D30A","*","BHZ",tt,tt+duration),
-     ("TA","D31A","*","BHZ",tt,tt+duration),
-     ("TA","D32A","*","BHZ",tt,tt+duration),
-     ("TA","E19A","*","BHZ",tt,tt+duration),
-     ("TA","E20A","*","BHZ",tt,tt+duration),
-     ("TA","E21A","*","BHZ",tt,tt+duration),
-     ("TA","E22A","*","BHZ",tt,tt+duration),
-     ("TA","E23A","*","BHZ",tt,tt+duration),
-     ("TA","E24A","*","BHZ",tt,tt+duration),
-     ("TA","E25A","*","BHZ",tt,tt+duration),
-     ("TA","E26A","*","BHZ",tt,tt+duration),
-     ("TA","E27A","*","BHZ",tt,tt+duration),
-     ("TA","E28A","*","BHZ",tt,tt+duration),
-     ("TA","E29A","*","BHZ",tt,tt+duration),
-     ("TA","E30A","*","BHZ",tt,tt+duration),
-     ("TA","E31A","*","BHZ",tt,tt+duration),
-     ("TA","E32A","*","BHZ",tt,tt+duration),
-     ("TA","E33A","*","BHZ",tt,tt+duration),
-     ("TA","F19A","*","BHZ",tt,tt+duration),
-     ("TA","F20A","*","BHZ",tt,tt+duration),
-     ("TA","F21A","*","BHZ",tt,tt+duration),
-     ("TA","F22A","*","BHZ",tt,tt+duration),
-     ("TA","F23A","*","BHZ",tt,tt+duration),
-     ("TA","F24A","*","BHZ",tt,tt+duration),
-     ("TA","F25A","*","BHZ",tt,tt+duration),
-     ("TA","F26A","*","BHZ",tt,tt+duration),
-     ("TA","F27A","*","BHZ",tt,tt+duration),
-     ("TA","F28A","*","BHZ",tt,tt+duration),
-     ("TA","F29A","*","BHZ",tt,tt+duration),
-     ("TA","F30A","*","BHZ",tt,tt+duration),
-     ("TA","F31A","*","BHZ",tt,tt+duration),
-     ("TA","F32A","*","BHZ",tt,tt+duration),
-     ("TA","F33A","*","BHZ",tt,tt+duration),
-     ("TA","G20A","*","BHZ",tt,tt+duration),
-     ("TA","G21A","*","BHZ",tt,tt+duration),
-     ("TA","G22A","*","BHZ",tt,tt+duration),
-     ("TA","G23A","*","BHZ",tt,tt+duration),
-     ("TA","G24A","*","BHZ",tt,tt+duration),
-     ("TA","G25A","*","BHZ",tt,tt+duration),
-     ("TA","G26A","*","BHZ",tt,tt+duration),
-     ("TA","G27A","*","BHZ",tt,tt+duration),
-     ("TA","G28A","*","BHZ",tt,tt+duration),
-     ("TA","G29A","*","BHZ",tt,tt+duration),
-     ("TA","G30A","*","BHZ",tt,tt+duration),
-     ("TA","G31A","*","BHZ",tt,tt+duration),
-     ("TA","G32A","*","BHZ",tt,tt+duration),
-     ("TA","G33A","*","BHZ",tt,tt+duration),
-     ("TA","H19A","*","BHZ",tt,tt+duration),
-     ("TA","H20A","*","BHZ",tt,tt+duration),
-     ("TA","H21A","*","BHZ",tt,tt+duration),
-     ("TA","H22A","*","BHZ",tt,tt+duration),
-     ("TA","H23A","*","BHZ",tt,tt+duration),
-     ("TA","H24A","*","BHZ",tt,tt+duration),
-     ("TA","H25A","*","BHZ",tt,tt+duration),
-     ("TA","H26A","*","BHZ",tt,tt+duration),
-     ("TA","H27A","*","BHZ",tt,tt+duration),
-     ("TA","H28A","*","BHZ",tt,tt+duration),
-     ("TA","H29A","*","BHZ",tt,tt+duration),
-     ("TA","H31A","*","BHZ",tt,tt+duration),
-     ("TA","H32A","*","BHZ",tt,tt+duration),
-     ("TA","H33A","*","BHZ",tt,tt+duration),
-     ("TA","I19A","*","BHZ",tt,tt+duration),
-     ("TA","I20A","*","BHZ",tt,tt+duration),
-     ("TA","I21A","*","BHZ",tt,tt+duration),
-     ("TA","I22A","*","BHZ",tt,tt+duration),
-     ("TA","I23A","*","BHZ",tt,tt+duration),
-     ("TA","I24A","*","BHZ",tt,tt+duration),
-     ("TA","I25A","*","BHZ",tt,tt+duration),
-     ("TA","I26A","*","BHZ",tt,tt+duration),
-     ("TA","I27A","*","BHZ",tt,tt+duration),
-     ("TA","I28A","*","BHZ",tt,tt+duration),
-     ("TA","I29A","*","BHZ",tt,tt+duration),
-     ("TA","I30A","*","BHZ",tt,tt+duration),
-     ("TA","I31A","*","BHZ",tt,tt+duration),
-     ("TA","I32A","*","BHZ",tt,tt+duration),
-     ("TA","I33A","*","BHZ",tt,tt+duration),
-     ("TA","J20A","*","BHZ",tt,tt+duration),
-     ("TA","J21A","*","BHZ",tt,tt+duration),
-     ("TA","J22A","*","BHZ",tt,tt+duration),
-     ("TA","J23A","*","BHZ",tt,tt+duration),
-     ("TA","J24A","*","BHZ",tt,tt+duration),
-     ("TA","J25A","*","BHZ",tt,tt+duration),
-     ("TA","J26A","*","BHZ",tt,tt+duration),
-     ("TA","J27A","*","BHZ",tt,tt+duration),
-     ("TA","J28A","*","BHZ",tt,tt+duration),
-     ("TA","J29A","*","BHZ",tt,tt+duration),
-     ("TA","J30A","*","BHZ",tt,tt+duration),
-     ("TA","J31A","*","BHZ",tt,tt+duration),
-     ("TA","J32A","*","BHZ",tt,tt+duration),
-     ("TA","J33A","*","BHZ",tt,tt+duration),
-     ("TA","K19A","*","BHZ",tt,tt+duration),
-     ("TA","K20A","*","BHZ",tt,tt+duration),
-     ("TA","K21A","*","BHZ",tt,tt+duration),
-     ("TA","K22A","*","BHZ",tt,tt+duration),
-     ("TA","K23A","*","BHZ",tt,tt+duration),
-     ("TA","K24A","*","BHZ",tt,tt+duration),
-     ("TA","K25A","*","BHZ",tt,tt+duration),
-     ("TA","K26A","*","BHZ",tt,tt+duration),
-     ("TA","K27A","*","BHZ",tt,tt+duration),
-     ("TA","K28A","*","BHZ",tt,tt+duration),
-     ("TA","K29A","*","BHZ",tt,tt+duration),
-     ("TA","K30A","*","BHZ",tt,tt+duration),
-     ("TA","K31A","*","BHZ",tt,tt+duration),
-     ("TA","K32A","*","BHZ",tt,tt+duration),
-     ("TA","K33A","*","BHZ",tt,tt+duration),
-     ("TA","K34A","*","BHZ",tt,tt+duration),
-     ("IU","RSSD","00","BHZ",tt,tt+duration),
-#     ("TA","KSCO","*","BHZ",tt,tt+duration),
-#     ("TA","L20A","*","BHZ",tt,tt+duration),
-#     ("TA","L21A","*","BHZ",tt,tt+duration),
-#     ("TA","L22A","*","BHZ",tt,tt+duration),
-#     ("TA","L23A","*","BHZ",tt,tt+duration),
-#     ("TA","L24A","*","BHZ",tt,tt+duration),
-#     ("TA","L25A","*","BHZ",tt,tt+duration),
-#     ("TA","L26A","*","BHZ",tt,tt+duration),
-#     ("TA","L27A","*","BHZ",tt,tt+duration),
-#     ("TA","L28A","*","BHZ",tt,tt+duration),
-#     ("TA","L29A","*","BHZ",tt,tt+duration),
-#     ("TA","L30A","*","BHZ",tt,tt+duration),
-#     ("TA","L31A","*","BHZ",tt,tt+duration),
-#     ("TA","L32A","*","BHZ",tt,tt+duration),
-#     ("TA","L33A","*","BHZ",tt,tt+duration),
-#     ("TA","L34A","*","BHZ",tt,tt+duration),
-#     ("TA","M20A","*","BHZ",tt,tt+duration),
-#     ("TA","M21A","*","BHZ",tt,tt+duration),
-#     ("TA","M22A","*","BHZ",tt,tt+duration),
-#     ("TA","M23A","*","BHZ",tt,tt+duration),
-#     ("TA","M24A","*","BHZ",tt,tt+duration),
-#     ("TA","M25A","*","BHZ",tt,tt+duration),
-#     ("TA","M26A","*","BHZ",tt,tt+duration),
-#     ("TA","M27A","*","BHZ",tt,tt+duration),
-#     ("TA","M28A","*","BHZ",tt,tt+duration),
-#     ("TA","M29A","*","BHZ",tt,tt+duration),
-#     ("TA","M30A","*","BHZ",tt,tt+duration),
-#     ("TA","M31A","*","BHZ",tt,tt+duration),
-#     ("TA","M33A","*","BHZ",tt,tt+duration),
-#     ("TA","M34A","*","BHZ",tt,tt+duration),
-#     ("TA","MDND","*","BHZ",tt,tt+duration),
-#     ("TA","N20A","*","BHZ",tt,tt+duration),
-#     ("TA","N21A","*","BHZ",tt,tt+duration),
-#     ("TA","N22A","*","BHZ",tt,tt+duration),
-#     ("TA","N23A","*","BHZ",tt,tt+duration),
-#     ("TA","N24A","*","BHZ",tt,tt+duration),
-#     ("TA","N25A","*","BHZ",tt,tt+duration),
-#     ("TA","N26A","*","BHZ",tt,tt+duration),
-#     ("TA","N27A","*","BHZ",tt,tt+duration),
-#     ("TA","N28A","*","BHZ",tt,tt+duration),
-#     ("TA","N29A","*","BHZ",tt,tt+duration),
-#     ("TA","N30A","*","BHZ",tt,tt+duration),
-#     ("TA","N31A","*","BHZ",tt,tt+duration),
-#     ("TA","N32A","*","BHZ",tt,tt+duration),
-#     ("TA","N33A","*","BHZ",tt,tt+duration),
-#     ("TA","N34A","*","BHZ",tt,tt+duration),
-#     ("TA","O20A","*","BHZ",tt,tt+duration),
-#     ("TA","O21A","*","BHZ",tt,tt+duration),
-#     ("TA","O22A","*","BHZ",tt,tt+duration),
-#     ("TA","O23A","*","BHZ",tt,tt+duration),
-#     ("TA","O24A","*","BHZ",tt,tt+duration),
-#     ("TA","O25A","*","BHZ",tt,tt+duration),
-#     ("TA","O26A","*","BHZ",tt,tt+duration),
-#     ("TA","O27A","*","BHZ",tt,tt+duration),
-#     ("TA","O28A","*","BHZ",tt,tt+duration),
-#     ("TA","O29A","*","BHZ",tt,tt+duration),
-#     ("TA","O30A","*","BHZ",tt,tt+duration),
-#     ("TA","O31A","*","BHZ",tt,tt+duration),
-#     ("TA","O32A","*","BHZ",tt,tt+duration),
-#     ("TA","O33A","*","BHZ",tt,tt+duration),
-#     ("TA","O34A","*","BHZ",tt,tt+duration),
-#     ("TA","P19A","*","BHZ",tt,tt+duration),
-#     ("TA","P20A","*","BHZ",tt,tt+duration),
-#     ("TA","P21A","*","BHZ",tt,tt+duration),
-#     ("TA","P22A","*","BHZ",tt,tt+duration),
-#     ("TA","P23A","*","BHZ",tt,tt+duration),
-#     ("TA","P24A","*","BHZ",tt,tt+duration),
-#     ("TA","P25A","*","BHZ",tt,tt+duration),
-#     ("TA","P26A","*","BHZ",tt,tt+duration),
-#     ("TA","P27A","*","BHZ",tt,tt+duration),
-#     ("TA","P28A","*","BHZ",tt,tt+duration),
-#     ("TA","P29A","*","BHZ",tt,tt+duration),
-#     ("TA","P30A","*","BHZ",tt,tt+duration),
-#     ("TA","P31A","*","BHZ",tt,tt+duration),
-#     ("TA","P32A","*","BHZ",tt,tt+duration),
-#     ("TA","P33A","*","BHZ",tt,tt+duration),
-#     ("TA","P34A","*","BHZ",tt,tt+duration),
-#     ("TA","P35A","*","BHZ",tt,tt+duration),
-#     ("TA","Q20A","*","BHZ",tt,tt+duration),
-#     ("TA","Q21A","*","BHZ",tt,tt+duration),
-#     ("TA","Q22A","*","BHZ",tt,tt+duration),
-#     ("TA","Q23A","*","BHZ",tt,tt+duration),
-#     ("TA","Q24A","*","BHZ",tt,tt+duration),
-#     ("TA","Q25A","*","BHZ",tt,tt+duration),
-#     ("TA","Q26A","*","BHZ",tt,tt+duration),
-#     ("TA","Q28A","*","BHZ",tt,tt+duration),
-#     ("TA","Q29A","*","BHZ",tt,tt+duration),
-#     ("TA","Q30A","*","BHZ",tt,tt+duration),
-#     ("TA","Q31A","*","BHZ",tt,tt+duration),
-#     ("TA","Q32A","*","BHZ",tt,tt+duration),
-#     ("TA","Q33A","*","BHZ",tt,tt+duration),
-#     ("TA","Q34A","*","BHZ",tt,tt+duration),
-#     ("TA","Q35A","*","BHZ",tt,tt+duration),
-#     ("TA","R20A","*","BHZ",tt,tt+duration),
-#     ("TA","R21A","*","BHZ",tt,tt+duration),
-#     ("TA","R22A","*","BHZ",tt,tt+duration),
-#     ("TA","R23A","*","BHZ",tt,tt+duration),
-#     ("TA","R24A","*","BHZ",tt,tt+duration),
-#     ("TA","R25A","*","BHZ",tt,tt+duration),
-#     ("TA","R26A","*","BHZ",tt,tt+duration),
-#     ("TA","R27A","*","BHZ",tt,tt+duration),
-#     ("TA","R28A","*","BHZ",tt,tt+duration),
-#     ("TA","R29A","*","BHZ",tt,tt+duration),
-#     ("TA","R30A","*","BHZ",tt,tt+duration),
-#     ("TA","R31A","*","BHZ",tt,tt+duration),
-#     ("TA","R32A","*","BHZ",tt,tt+duration),
-#     ("TA","R33A","*","BHZ",tt,tt+duration),
-#     ("TA","R34A","*","BHZ",tt,tt+duration),
-#     ("TA","R35A","*","BHZ",tt,tt+duration),
-#     ("TA","S20A","*","BHZ",tt,tt+duration),
-#     ("TA","S21A","*","BHZ",tt,tt+duration),
-#     ("TA","S22A","*","BHZ",tt,tt+duration),
-#     ("TA","S23A","*","BHZ",tt,tt+duration),
-#     ("TA","S24A","*","BHZ",tt,tt+duration),
-#     ("TA","S25A","*","BHZ",tt,tt+duration),
-#     ("TA","S26A","*","BHZ",tt,tt+duration),
-#     ("TA","S27A","*","BHZ",tt,tt+duration),
-#     ("TA","S28A","*","BHZ",tt,tt+duration),
-#     ("TA","S29A","*","BHZ",tt,tt+duration),
-#     ("TA","S30A","*","BHZ",tt,tt+duration),
-#     ("TA","S31A","*","BHZ",tt,tt+duration),
-#     ("TA","S32A","*","BHZ",tt,tt+duration),
-#     ("TA","S33A","*","BHZ",tt,tt+duration),
-#     ("TA","S34A","*","BHZ",tt,tt+duration),
-#     ("TA","S35A","*","BHZ",tt,tt+duration),
-#     ("TA","SUSD","*","BHZ",tt,tt+duration),
-#     ("TA","T21A","*","BHZ",tt,tt+duration),
-#     ("TA","T22A","*","BHZ",tt,tt+duration),
-#     ("TA","T23A","*","BHZ",tt,tt+duration),
-#     ("TA","T24A","*","BHZ",tt,tt+duration),
-#     ("TA","T24B","*","BHZ",tt,tt+duration),
-#     ("TA","T25A","*","BHZ",tt,tt+duration),
-#     ("TA","T26A","*","BHZ",tt,tt+duration),
-#     ("TA","T27A","*","BHZ",tt,tt+duration),
-#     ("TA","T28A","*","BHZ",tt,tt+duration),
-#     ("TA","T29A","*","BHZ",tt,tt+duration),
-#     ("TA","T30A","*","BHZ",tt,tt+duration),
-#     ("TA","T31A","*","BHZ",tt,tt+duration),
-#     ("TA","T32A","*","BHZ",tt,tt+duration),
-#     ("TA","T33A","*","BHZ",tt,tt+duration),
-#     ("TA","T34A","*","BHZ",tt,tt+duration),
-#     ("TA","T35A","*","BHZ",tt,tt+duration),
-#     ("TA","U20A","*","BHZ",tt,tt+duration),
-#     ("TA","U21A","*","BHZ",tt,tt+duration),
-#     ("TA","U22A","*","BHZ",tt,tt+duration),
-#     ("TA","U23A","*","BHZ",tt,tt+duration),
-#     ("TA","U24A","*","BHZ",tt,tt+duration),
-#     ("TA","U25A","*","BHZ",tt,tt+duration),
-#     ("TA","U26A","*","BHZ",tt,tt+duration),
-#     ("TA","U27A","*","BHZ",tt,tt+duration),
-#     ("TA","U28A","*","BHZ",tt,tt+duration),
-#     ("TA","U29A","*","BHZ",tt,tt+duration),
-#     ("TA","U30A","*","BHZ",tt,tt+duration),
-#     ("TA","U31A","*","BHZ",tt,tt+duration),
-#     ("TA","U32A","*","BHZ",tt,tt+duration),
-#     ("TA","U33A","*","BHZ",tt,tt+duration),
-#     ("TA","U34A","*","BHZ",tt,tt+duration),
-#     ("TA","U35A","*","BHZ",tt,tt+duration)]
-     ]
-        blastsites=[(44.56,43.37,-105.83,-105.03),(45.17,44.94,-107.03,-106.73),(45.94,45.70,-107.14,-106.49)]
-    elif basin==4:
-        bulk=[("TA", "034A", "*", "BHZ", tt, tt+duration),
-        ("TA", "035A", "*", "BHZ", tt, tt+duration),
-        ("TA", "035Z", "*", "BHZ", tt, tt+duration),
-        ("TA", "123A", "*", "BHZ", tt, tt+duration),
-        ("TA", "124A", "*", "BHZ", tt, tt+duration),
-        ("TA", "125A", "*", "BHZ", tt, tt+duration),
-        ("TA", "126A", "*", "BHZ", tt, tt+duration),
-        ("TA", "127A", "*", "BHZ", tt, tt+duration),
-        ("TA", "128A", "*", "BHZ", tt, tt+duration),
-        ("TA", "129A", "*", "BHZ", tt, tt+duration),
-        ("TA", "130A", "*", "BHZ", tt, tt+duration),
-        ("TA", "131A", "*", "BHZ", tt, tt+duration),
-        ("TA", "133A", "*", "BHZ", tt, tt+duration),
-        ("TA", "134A", "*", "BHZ", tt, tt+duration),
-        ("TA", "135A", "*", "BHZ", tt, tt+duration),
-        ("TA", "136A", "*", "BHZ", tt, tt+duration),
-        ("TA", "137A", "*", "BHZ", tt, tt+duration),
-        ("TA", "138A", "*", "BHZ", tt, tt+duration),
-        ("TA", "139A", "*", "BHZ", tt, tt+duration),
-        ("TA", "140A", "*", "BHZ", tt, tt+duration),
-        ("TA", "141A", "*", "BHZ", tt, tt+duration),
-        ("TA", "142A", "*", "BHZ", tt, tt+duration),
-        ("TA", "143A", "*", "BHZ", tt, tt+duration),
-        ("TA", "144A", "*", "BHZ", tt, tt+duration),
-        ("TA", "145A", "*", "BHZ", tt, tt+duration),
-        ("TA", "146A", "*", "BHZ", tt, tt+duration),
-        ("TA", "147A", "*", "BHZ", tt, tt+duration),
-        ("TA", "148A", "*", "BHZ", tt, tt+duration),
-        ("TA", "149A", "*", "BHZ", tt, tt+duration),
-        ("TA", "150A", "*", "BHZ", tt, tt+duration),
-        ("TA", "151A", "*", "BHZ", tt, tt+duration),
-        ("TA", "223A", "*", "BHZ", tt, tt+duration),
-        ("TA", "224A", "*", "BHZ", tt, tt+duration),
-        ("TA", "225A", "*", "BHZ", tt, tt+duration),
-        ("TA", "226A", "*", "BHZ", tt, tt+duration),
-        ("TA", "226B", "*", "BHZ", tt, tt+duration),
-        ("TA", "227A", "*", "BHZ", tt, tt+duration),
-        ("TA", "228A", "*", "BHZ", tt, tt+duration),
-        ("TA", "229A", "*", "BHZ", tt, tt+duration),
-        ("TA", "230A", "*", "BHZ", tt, tt+duration),
-        ("TA", "231A", "*", "BHZ", tt, tt+duration),
-        ("TA", "232A", "*", "BHZ", tt, tt+duration),
-        ("TA", "233A", "*", "BHZ", tt, tt+duration),
-        ("TA", "234A", "*", "BHZ", tt, tt+duration),
-        ("TA", "236A", "*", "BHZ", tt, tt+duration),
-        ("TA", "237A", "*", "BHZ", tt, tt+duration),
-        ("TA", "238A", "*", "BHZ", tt, tt+duration),
-        ("TA", "239A", "*", "BHZ", tt, tt+duration),
-        ("TA", "240A", "*", "BHZ", tt, tt+duration),
-        ("TA", "241A", "*", "BHZ", tt, tt+duration),
-        ("TA", "242A", "*", "BHZ", tt, tt+duration),
-        ("TA", "243A", "*", "BHZ", tt, tt+duration),
-        ("TA", "244A", "*", "BHZ", tt, tt+duration),
-        ("TA", "245A", "*", "BHZ", tt, tt+duration),
-        ("TA", "246A", "*", "BHZ", tt, tt+duration),
-        ("TA", "247A", "*", "BHZ", tt, tt+duration),
-        ("TA", "248A", "*", "BHZ", tt, tt+duration),
-        ("TA", "249A", "*", "BHZ", tt, tt+duration),
-        ("TA", "250A", "*", "BHZ", tt, tt+duration),
-        ("TA", "251A", "*", "BHZ", tt, tt+duration),
-        ("TA", "324A", "*", "BHZ", tt, tt+duration),
-        ("TA", "325A", "*", "BHZ", tt, tt+duration),
-        ("TA", "326A", "*", "BHZ", tt, tt+duration),
-        ("TA", "327A", "*", "BHZ", tt, tt+duration),
-        ("TA", "328A", "*", "BHZ", tt, tt+duration),
-        ("TA", "329A", "*", "BHZ", tt, tt+duration),
-        ("TA", "330A", "*", "BHZ", tt, tt+duration),
-        ("TA", "331A", "*", "BHZ", tt, tt+duration),
-        ("TA", "332A", "*", "BHZ", tt, tt+duration),
-        ("TA", "333A", "*", "BHZ", tt, tt+duration),
-        ("TA", "334A", "*", "BHZ", tt, tt+duration),
-        ("TA", "335A", "*", "BHZ", tt, tt+duration),
-        ("TA", "336A", "*", "BHZ", tt, tt+duration),
-        ("TA", "337A", "*", "BHZ", tt, tt+duration),
-        ("TA", "338A", "*", "BHZ", tt, tt+duration),
-        ("TA", "339A", "*", "BHZ", tt, tt+duration),
-        ("TA", "340A", "*", "BHZ", tt, tt+duration),
-        ("TA", "341A", "*", "BHZ", tt, tt+duration),
-        ("TA", "342A", "*", "BHZ", tt, tt+duration),
-        ("TA", "343A", "*", "BHZ", tt, tt+duration),
-        ("TA", "344A", "*", "BHZ", tt, tt+duration),
-        ("TA", "345A", "*", "BHZ", tt, tt+duration),
-        ("TA", "346A", "*", "BHZ", tt, tt+duration),
-        ("TA", "347A", "*", "BHZ", tt, tt+duration),
-        ("TA", "348A", "*", "BHZ", tt, tt+duration),
-        ("TA", "349A", "*", "BHZ", tt, tt+duration),
-        ("TA", "350A", "*", "BHZ", tt, tt+duration),
-        ("TA", "351A", "*", "BHZ", tt, tt+duration),
-        ("TA", "425A", "*", "BHZ", tt, tt+duration),
-        ("TA", "426A", "*", "BHZ", tt, tt+duration),
-        ("TA", "427A", "*", "BHZ", tt, tt+duration),
-        ("TA", "428A", "*", "BHZ", tt, tt+duration),
-        ("TA", "429A", "*", "BHZ", tt, tt+duration),
-        ("TA", "430A", "*", "BHZ", tt, tt+duration),
-        ("TA", "431A", "*", "BHZ", tt, tt+duration),
-        ("TA", "432A", "*", "BHZ", tt, tt+duration),
-        ("TA", "433A", "*", "BHZ", tt, tt+duration),
-        ("TA", "434A", "*", "BHZ", tt, tt+duration),
-        ("TA", "435B", "*", "BHZ", tt, tt+duration),
-        ("TA", "436A", "*", "BHZ", tt, tt+duration),
-        ("TA", "437A", "*", "BHZ", tt, tt+duration),
-        ("TA", "438A", "*", "BHZ", tt, tt+duration),
-        ("TA", "439A", "*", "BHZ", tt, tt+duration),
-        ("TA", "440A", "*", "BHZ", tt, tt+duration),
-        ("TA", "441A", "*", "BHZ", tt, tt+duration),
-        ("TA", "442A", "*", "BHZ", tt, tt+duration),
-        ("TA", "443A", "*", "BHZ", tt, tt+duration),
-        ("TA", "444A", "*", "BHZ", tt, tt+duration),
-        ("TA", "445A", "*", "BHZ", tt, tt+duration),
-        ("TA", "446A", "*", "BHZ", tt, tt+duration),
-        ("TA", "447A", "*", "BHZ", tt, tt+duration),
-        ("TA", "448A", "*", "BHZ", tt, tt+duration),
-        ("TA", "449A", "*", "BHZ", tt, tt+duration),
-        ("TA", "450A", "*", "BHZ", tt, tt+duration),
-        ("TA", "451A", "*", "BHZ", tt, tt+duration),
-        ("TA", "452A", "*", "BHZ", tt, tt+duration),
-        ("TA", "526A", "*", "BHZ", tt, tt+duration),
-        ("TA", "527A", "*", "BHZ", tt, tt+duration),
-        ("TA", "528A", "*", "BHZ", tt, tt+duration),
-        ("TA", "529A", "*", "BHZ", tt, tt+duration),
-        ("TA", "530A", "*", "BHZ", tt, tt+duration),
-        ("TA", "531A", "*", "BHZ", tt, tt+duration),
-        ("TA", "532A", "*", "BHZ", tt, tt+duration),
-        ("TA", "533A", "*", "BHZ", tt, tt+duration),
-        ("TA", "534A", "*", "BHZ", tt, tt+duration),
-        ("TA", "535A", "*", "BHZ", tt, tt+duration),
-        ("TA", "536A", "*", "BHZ", tt, tt+duration),
-        ("TA", "537A", "*", "BHZ", tt, tt+duration),
-        ("TA", "538A", "*", "BHZ", tt, tt+duration),
-        ("TA", "539A", "*", "BHZ", tt, tt+duration),
-        ("TA", "540A", "*", "BHZ", tt, tt+duration),
-        ("TA", "541A", "*", "BHZ", tt, tt+duration),
-        ("TA", "542A", "*", "BHZ", tt, tt+duration),
-        ("TA", "543A", "*", "BHZ", tt, tt+duration),
-        ("TA", "544A", "*", "BHZ", tt, tt+duration),
-        ("TA", "545A", "*", "BHZ", tt, tt+duration),
-        ("TA", "546A", "*", "BHZ", tt, tt+duration),
-        ("TA", "552A", "*", "BHZ", tt, tt+duration),
-        ("TA", "626A", "*", "BHZ", tt, tt+duration),
-        ("TA", "627A", "*", "BHZ", tt, tt+duration),
-        ("TA", "628A", "*", "BHZ", tt, tt+duration),
-        ("TA", "631A", "*", "BHZ", tt, tt+duration),
-        ("TA", "632A", "*", "BHZ", tt, tt+duration),
-        ("TA", "633A", "*", "BHZ", tt, tt+duration),
-        ("TA", "634A", "*", "BHZ", tt, tt+duration),
-        ("TA", "635A", "*", "BHZ", tt, tt+duration),
-        ("TA", "636A", "*", "BHZ", tt, tt+duration),
-        ("TA", "637A", "*", "BHZ", tt, tt+duration),
-        ("TA", "638A", "*", "BHZ", tt, tt+duration),
-        ("TA", "645A", "*", "BHZ", tt, tt+duration),
-        ("TA", "646A", "*", "BHZ", tt, tt+duration),
-        ("TA", "732A", "*", "BHZ", tt, tt+duration),
-        ("TA", "733A", "*", "BHZ", tt, tt+duration),
-        ("TA", "734A", "*", "BHZ", tt, tt+duration),
-        ("TA", "735A", "*", "BHZ", tt, tt+duration),
-        ("TA", "736A", "*", "BHZ", tt, tt+duration),
-        ("TA", "737A", "*", "BHZ", tt, tt+duration),
-        ("TA", "738A", "*", "BHZ", tt, tt+duration),
-        ("TA", "832A", "*", "BHZ", tt, tt+duration),
-        ("TA", "833A", "*", "BHZ", tt, tt+duration),
-        ("TA", "834A", "*", "BHZ", tt, tt+duration),
-        ("TA", "835A", "*", "BHZ", tt, tt+duration),
-        ("TA", "933A", "*", "BHZ", tt, tt+duration),
-        ("TA", "934A", "*", "BHZ", tt, tt+duration),
-        ("TA", "936A", "*", "BHZ", tt, tt+duration),
-        ("TA", "ABTX", "*", "BHZ", tt, tt+duration),
-        ("TA", "MSTX", "*", "BHZ", tt, tt+duration),
-        ("TA", "TASL", "*", "BHZ", tt, tt+duration),
-        ("TA", "TASM", "*", "BHZ", tt, tt+duration),
-        ("TA", "WHTX", "*", "BHZ", tt, tt+duration),
-        ("TA", "X23A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X24A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X25A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X26A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X27A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X28A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X29A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X30A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X31A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X32A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X33A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X34A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X35A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X36A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X37A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X38A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X39A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X40A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X41A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X42A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X43A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X44A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X45A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X46A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X47A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X48A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X49A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X50A", "*", "BHZ", tt, tt+duration),
-        ("TA", "X50B", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y23A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y24A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y25A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y26A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y27A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y28A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y29A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y30A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y31A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y32A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y33A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y34A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y35A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y36A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y37A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y38A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y39A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y40A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y41A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y42A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y43A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y44A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y45A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y46A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y47A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y48A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y49A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y50A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Y51A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z23A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z24A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z25A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z26A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z27A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z28A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z29A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z30A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z31A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z32A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z33A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z34A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z35A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z36A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z37A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z38A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z39A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z40A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z41A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z42A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z43A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z44A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z45A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z46A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z47A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z48A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z49A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z50A", "*", "BHZ", tt, tt+duration),
-        ("TA", "Z51A", "*", "BHZ", tt, tt+duration)]
+     ("TA","A21A","*","BHZ",tt,tt+duration)]
+        df5 = pd.read_pickle('active_mines.pkl') 
+        anfdf =pd.read_pickle('ANF.pkl')
+        bbox = [42.57,49.17,-109.26,-98.97]
+        temp =[]
+        for i in range(len(df5)):
+            if bbox[2] < df5.LONGITUDE[i] < bbox[3] and bbox[0] < df5.LATITUDE[i] < bbox[1]:
+                temp.append(i)
+        df6 = df5.iloc[temp]
+        df6 = df6.reset_index(drop=True)
+        #blastsites=[(44.56,43.37,-105.83,-105.03),(45.17,44.94,-107.03,-106.73),(45.94,45.70,-107.14,-106.49)]
+        blastsites = []
+        for i in range(len(df6)):
+            blastsites.append(float(df6.LATITUDE[i]),-1*float(df6.LONGITUDE[i]))
+        temp = np.empty([len(anfdf),len(blastsites)])
+        for event in range(len(anfdf)):
+            for each in range(len(blastsites)):
+
+                if g2d(float(anfdf.Lat[event]),anfdf.Lon[event],blastsites[each][0],blastsites[each][1])[0]//1000 < 12:
+                    temp[event][each]=1
+                else:
+                    temp[event][each]=0
+        junk = np.sum(temp,axis = 1)
+
     return bulk,blastsites
