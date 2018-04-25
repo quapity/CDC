@@ -9,9 +9,6 @@ LDK: A seismic array detection algorithm
 |
 <b><a href="#tutorial">Tutorial</a></b>
 |
-<b><a href="#credits">Credits</a></b>
-|
-<b><a href="#license">License</a></b>
 </p>
 
 ![ScreenShot](https://github.com/quapity/LDK/raw/master/SSoverview.png)
@@ -36,10 +33,9 @@ Set-Up
 ------------
 
 ### Notes
-* tested on Python 2.7
-* recommend to run in seperate env if other seimic processing relies on older obspy (<0.9.x)
-    With Conda you can use environments with diff packages,versions etc.
-    Docs on managing environments here: http://conda.pydata.org/docs/using/envs.html 
+* Python 3
+* Recommend to run in seperate env if other seimic processing relies on older obspy (<0.9.x)
+     Docs on managing environments with Conda here: http://conda.pydata.org/docs/using/envs.html 
 
 ### Dependencies
 * Relies on Numpy,Scipy,Pandas, Basemap and Geopy. Most can be installed with pip or ship with Anaconda
@@ -67,18 +63,9 @@ Tutorial
 
 ### General Usage
 
-* LDK.detection_function.detect('YYYY','MM','DD','HH','MM','SS',duration=7200,ndays=1,wb=1)
-    - The first 6 args are start date/time. These pipe to obspy UTCDatetime
-    - duration: number of seconds (2 hours is the smallest allowable increment)
-    - ndays:    number of days to process from start date/time
-    - wb:       the station list to use. Referenced from lists in the last half of Util.py
+* CDC.py [datestring, ndays, duration]
+    - datestring: Datetime or UTCDatetime formats 
+    - ndays: number of days to process from starttime
+    - duration: number of seconds (2 hours is the smallest allowable increment), defaults to 7200
 
-### Basic Tutorial
-
-Credits
-------------
-
-
-License
--------------
 
